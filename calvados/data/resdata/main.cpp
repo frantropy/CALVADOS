@@ -165,7 +165,9 @@ int main(int argc, const char** argv)
   );
   resdata.run();
   resdata.process_data();
+  #ifdef DEBUG
   resdata.write_summary_to_file("field_summary.txt");
+  #endif
   resdata.write_output(out_prefix);
 
   return 0;

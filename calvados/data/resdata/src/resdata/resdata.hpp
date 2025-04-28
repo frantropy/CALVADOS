@@ -218,7 +218,7 @@ namespace resdata
                 if (dx2 < cut_sig_2)
                 {
                   resdata::density::intra_mol_routine(
-                    i, gi, gj, dx2, weight, mol_id, natmol2, density_bins, inv_num_mol, frame_same_mutex, intram_mat_density);
+                      i, gi, gj, dx2, weight, mol_id, natmol2, density_bins, inv_num_mol, frame_same_mutex, intram_mat_density);
                 }
               }
             }
@@ -231,7 +231,7 @@ namespace resdata
                   if (dx2 < cut_sig_2)
                   {
                     resdata::density::inter_mol_same_routine(
-                      i, gi, gj, dx2, weight, mol_id, natmol2, density_bins, frame_same_mutex, frame_same_mat, interm_same_mat_density);
+                        i, gi, gj, dx2, weight, mol_id, natmol2, density_bins, frame_same_mutex, frame_same_mat, interm_same_mat_density);
                   }
                   if (delta != 0)
                   {
@@ -246,7 +246,7 @@ namespace resdata
                     if (dx2 < cut_sig_2)
                     {
                       resdata::density::inter_mol_same_routine(
-                        i, gi, gj, dx2, weight, mol_id, natmol2, density_bins, frame_same_mutex, frame_same_mat, interm_same_mat_density);
+                          i, gi, gj, dx2, weight, mol_id, natmol2, density_bins, frame_same_mutex, frame_same_mat, interm_same_mat_density);
                     }
                   }
                 }
@@ -256,7 +256,7 @@ namespace resdata
                 if (dx2 < cut_sig_2 && cross)
                 {
                   resdata::density::inter_mol_cross_routine(
-                    i, j, gi, gj, dx2, weight, mol_id, natmol2, top.get_cross_index(), density_bins, frame_cross_mutex, frame_cross_mat, interm_cross_mat_density);
+                      i, j, gi, gj, dx2, weight, mol_id, natmol2, top.get_cross_index(), density_bins, frame_cross_mutex, frame_cross_mat, interm_cross_mat_density);
                 }
               }
             }
@@ -331,17 +331,18 @@ namespace resdata
         LOG("Reading simple topology file " << top_path_);
         auto stopol = resdata::io::read_simple_topology(top_path_);
         std::vector<int> n_mol = std::get<2>(stopol);
-        for ( int mi = 0; mi < std::get<2>(stopol).size(); mi++ )
-        {          
+        for (int mi = 0; mi < std::get<2>(stopol).size(); mi++)
+        {
           const std::string molecule_name = std::get<3>(stopol)[mi];
           const std::vector<std::string> atom_names = std::get<4>(stopol)[mi];
           const std::vector<std::string> residue_names = std::get<5>(stopol)[mi];
           const std::vector<int> residue_indices = std::get<6>(stopol)[mi];
-          for ( int nm = 0; nm < n_mol[mi]; nm++ ){
+          for (int nm = 0; nm < n_mol[mi]; nm++)
+          {
             top_.add_molecule(molecule_name, atom_names, residue_names, residue_indices);
           }
         }
-        PbcType pbcType = resdata::dtypes::pbc_type_map.at(std::get<1>(stopol));
+        PbcType pbcType = resdata::dtypes::pbc_type_map[std::get<1>(stopol)];
         matrix box;
         for (int i = 0; i < 3; ++i)
         {
@@ -353,10 +354,9 @@ namespace resdata
         top_.set_topol_pbc(pbcType, box);
       }
       else
-      { 
+      {
         LOG("Reading topology file " << top_path_);
         gmx_mtop_t *mtop = static_cast<gmx_mtop_t *>(malloc(sizeof(gmx_mtop_t)));
-        // TpxFileHeader header = readTpxHeader(top_path_.c_str(), true);
         int natoms;
         matrix boxtop;
 
@@ -402,16 +402,7 @@ namespace resdata
         LOG("Freed mtop");
       }
       // exit(1);
-      top_.print_topology_summary("./topol.log");
       LOG("Filled index array")
-      // if (index_.empty())
-      // {
-      //   index_.resize(top_.get_n_atoms());
-      //   for (int i = 0; i < top_.get_n_atoms(); i++)
-      //   {
-      //     index_[i] = i;
-      //   }
-      // }
       LOG("Applying index");
       top_.apply_index(index_);
       LOG("done applying index");
@@ -608,7 +599,8 @@ namespace resdata
       LOG("Calculating same and cross thread indices");
       std::size_t num_ops_same = 0;
       LOG("NMOLS 0: " << top_.get_n_mols(0));
-      for (std::size_t im = 0; im < top_.get_n_moltypes(); im++) {
+      for (std::size_t im = 0; im < top_.get_n_moltypes(); im++)
+      {
         LOG("Calculating num_ops_same for molecule type " << im);
         num_ops_same += top_.get_n_mols(im) * (top_.get_res_per_molecule(im) * (top_.get_res_per_molecule(im) + 1)) / 2;
       }
@@ -622,8 +614,10 @@ namespace resdata
       std::size_t start_i_same = 0, start_j_same = 0, end_i_same = 0, end_j_same = 0;
 
       int num_ops_cross = 0;
-      for (std::size_t im = 0; im < top_.get_n_moltypes(); im++) {
-        for (std::size_t jm = im + 1; jm < top_.get_n_moltypes(); jm++) {
+      for (std::size_t im = 0; im < top_.get_n_moltypes(); im++)
+      {
+        for (std::size_t jm = im + 1; jm < top_.get_n_moltypes(); jm++)
+        {
           LOG("Calculating num_ops_cross for molecule types " << im << " and " << jm);
           num_ops_cross += top_.get_n_mols(im) * top_.get_res_per_molecule(im) * top_.get_n_mols(jm) * top_.get_res_per_molecule(jm);
         }
@@ -637,7 +631,8 @@ namespace resdata
       std::size_t start_mti_cross = 0, start_mtj_cross = 1, start_im_cross = 0, start_jm_cross = 0, start_i_cross = 0, start_j_cross = 0;
       std::size_t end_mti_cross = 1, end_mtj_cross = 2, end_im_cross = 1, end_jm_cross = 1, end_i_cross = 0, end_j_cross = 0;
 
-      for (int tid = 0; tid < num_threads_; tid++) {
+      for (int tid = 0; tid < num_threads_; tid++)
+      {
         LOG("Processing thread " << tid);
 
         /* calculate same indices */
@@ -645,9 +640,10 @@ namespace resdata
         LOG("n_loop_operations_same: " << n_loop_operations_same);
 
         long int n_loop_operations_total_same = n_loop_operations_same;
-        while (top_.get_res_per_molecule(end_mti_same - 1) - static_cast<int>(end_j_same) <= n_loop_operations_same) {
+        while (top_.get_res_per_molecule(end_mti_same - 1) - static_cast<int>(end_j_same) <= n_loop_operations_same)
+        {
           LOG("Inside same loop: end_mti_same=" << end_mti_same << ", end_im_same=" << end_im_same
-          << ", end_i_same=" << end_i_same << ", end_j_same=" << end_j_same);
+                                                << ", end_i_same=" << end_i_same << ", end_j_same=" << end_j_same);
 
           int sub_same = top_.get_res_per_molecule(end_mti_same - 1) - static_cast<int>(end_j_same);
           LOG("sub_same: " << sub_same);
@@ -655,20 +651,23 @@ namespace resdata
           end_i_same++;
           end_j_same = end_i_same;
 
-          if (static_cast<int>(end_j_same) == top_.get_res_per_molecule(end_mti_same - 1)) {
-        LOG("Incrementing end_im_same");
-        end_im_same++;
-        end_i_same = 0;
-        end_j_same = 0;
+          if (static_cast<int>(end_j_same) == top_.get_res_per_molecule(end_mti_same - 1))
+          {
+            LOG("Incrementing end_im_same");
+            end_im_same++;
+            end_i_same = 0;
+            end_j_same = 0;
           }
-          if (static_cast<int>(end_im_same) - 1 == top_.get_n_mols(end_mti_same - 1)) {
-        LOG("Incrementing end_mti_same");
-        end_mti_same++;
-        end_im_same = 1;
-        end_i_same = 0;
-        end_j_same = 0;
+          if (static_cast<int>(end_im_same) - 1 == top_.get_n_mols(end_mti_same - 1))
+          {
+            LOG("Incrementing end_mti_same");
+            end_mti_same++;
+            end_im_same = 1;
+            end_i_same = 0;
+            end_j_same = 0;
           }
-          if (n_loop_operations_same == 0) break;
+          if (n_loop_operations_same == 0)
+            break;
         }
         end_j_same += n_loop_operations_same;
 
@@ -676,74 +675,88 @@ namespace resdata
         int n_loop_operations_total_cross = n_per_thread_cross + (tid < n_threads_cross_uneven ? 1 : 0);
         LOG("n_loop_operations_total_cross: " << n_loop_operations_total_cross);
 
-        if (top_.get_n_moltypes() > 1) {
+        if (top_.get_n_moltypes() > 1)
+        {
           int n_loop_operations_cross = n_loop_operations_total_cross;
           while (top_.get_res_per_molecule(end_mti_cross - 1) * top_.get_res_per_molecule(end_mtj_cross - 1) -
-             (top_.get_res_per_molecule(end_mtj_cross - 1) * static_cast<int>(end_i_cross) + static_cast<int>(end_j_cross)) <=
-             n_loop_operations_cross) {
-        LOG("Inside cross loop: end_mti_cross=" << end_mti_cross << ", end_mtj_cross=" << end_mtj_cross
-            << ", end_im_cross=" << end_im_cross << ", end_jm_cross=" << end_jm_cross
-            << ", end_i_cross=" << end_i_cross << ", end_j_cross=" << end_j_cross);
+                     (top_.get_res_per_molecule(end_mtj_cross - 1) * static_cast<int>(end_i_cross) + static_cast<int>(end_j_cross)) <=
+                 n_loop_operations_cross)
+          {
+            LOG("Inside cross loop: end_mti_cross=" << end_mti_cross << ", end_mtj_cross=" << end_mtj_cross
+                                                    << ", end_im_cross=" << end_im_cross << ", end_jm_cross=" << end_jm_cross
+                                                    << ", end_i_cross=" << end_i_cross << ", end_j_cross=" << end_j_cross);
 
-        int sub_cross = top_.get_res_per_molecule(end_mti_cross - 1) * top_.get_res_per_molecule(end_mtj_cross - 1) -
-                (top_.get_res_per_molecule(end_mtj_cross - 1) * static_cast<int>(end_i_cross) + static_cast<int>(end_j_cross));
-        LOG("sub_cross: " << sub_cross);
-        n_loop_operations_cross -= sub_cross;
+            int sub_cross = top_.get_res_per_molecule(end_mti_cross - 1) * top_.get_res_per_molecule(end_mtj_cross - 1) -
+                            (top_.get_res_per_molecule(end_mtj_cross - 1) * static_cast<int>(end_i_cross) + static_cast<int>(end_j_cross));
+            LOG("sub_cross: " << sub_cross);
+            n_loop_operations_cross -= sub_cross;
 
-        end_jm_cross++;
-        end_i_cross = 0;
-        end_j_cross = 0;
+            end_jm_cross++;
+            end_i_cross = 0;
+            end_j_cross = 0;
 
-        if (end_jm_cross > top_.get_n_mols(end_mtj_cross - 1)) {
-          LOG("Incrementing end_mtj_cross");
-          end_mtj_cross++;
-          end_jm_cross = 1;
-          end_i_cross = 0;
-          end_j_cross = 0;
-        }
-        if (end_mtj_cross > top_.get_n_moltypes()) {
-          LOG("Incrementing end_im_cross");
-          end_im_cross++;
-          end_mtj_cross = end_mti_cross + 1;
-          end_jm_cross = 1;
-          end_i_cross = 0;
-          end_j_cross = 0;
-        }
-        if (end_im_cross > top_.get_n_mols(end_mti_cross - 1)) {
-          LOG("Incrementing end_mti_cross");
-          end_mti_cross++;
-          end_mtj_cross = end_mti_cross + 1;
-          end_im_cross = 1;
-          end_jm_cross = 1;
-          end_i_cross = 0;
-          end_j_cross = 0;
-        }
-        if (end_mti_cross == top_.get_n_moltypes()) break;
-        if (n_loop_operations_cross == 0) break;
+            if (end_jm_cross > top_.get_n_mols(end_mtj_cross - 1))
+            {
+              LOG("Incrementing end_mtj_cross");
+              end_mtj_cross++;
+              end_jm_cross = 1;
+              end_i_cross = 0;
+              end_j_cross = 0;
+            }
+            if (end_mtj_cross > top_.get_n_moltypes())
+            {
+              LOG("Incrementing end_im_cross");
+              end_im_cross++;
+              end_mtj_cross = end_mti_cross + 1;
+              end_jm_cross = 1;
+              end_i_cross = 0;
+              end_j_cross = 0;
+            }
+            if (end_im_cross > top_.get_n_mols(end_mti_cross - 1))
+            {
+              LOG("Incrementing end_mti_cross");
+              end_mti_cross++;
+              end_mtj_cross = end_mti_cross + 1;
+              end_im_cross = 1;
+              end_jm_cross = 1;
+              end_i_cross = 0;
+              end_j_cross = 0;
+            }
+            if (end_mti_cross == top_.get_n_moltypes())
+              break;
+            if (n_loop_operations_cross == 0)
+              break;
           }
 
-          if (end_mti_cross < top_.get_n_moltypes()) {
-        end_i_cross += n_loop_operations_cross / top_.get_res_per_molecule(end_mtj_cross - 1);
-        end_j_cross += n_loop_operations_cross % top_.get_res_per_molecule(end_mtj_cross - 1);
-        end_i_cross += end_j_cross / top_.get_res_per_molecule(end_mtj_cross - 1);
-        end_j_cross %= top_.get_res_per_molecule(end_mtj_cross - 1);
+          if (end_mti_cross < top_.get_n_moltypes())
+          {
+            end_i_cross += n_loop_operations_cross / top_.get_res_per_molecule(end_mtj_cross - 1);
+            end_j_cross += n_loop_operations_cross % top_.get_res_per_molecule(end_mtj_cross - 1);
+            end_i_cross += end_j_cross / top_.get_res_per_molecule(end_mtj_cross - 1);
+            end_j_cross %= top_.get_res_per_molecule(end_mtj_cross - 1);
           }
         }
 
-        if (same_) {
+        if (same_)
+        {
           LOG("Adding same_thread_indices_ for thread " << tid);
           same_thread_indices_.push_back({start_mti_same, start_im_same, start_i_same, start_j_same, end_mti_same,
-                  end_im_same, end_i_same, end_j_same, n_loop_operations_total_same});
-        } else {
+                                          end_im_same, end_i_same, end_j_same, n_loop_operations_total_same});
+        }
+        else
+        {
           same_thread_indices_.push_back({0, 0, 0, 0, 0, 0, 0, 0, 0});
         }
 
-        if (cross_ && top_.get_n_moltypes() > 1) {
+        if (cross_ && top_.get_n_moltypes() > 1)
+        {
           LOG("Adding cross_thread_indices_ for thread " << tid);
           cross_thread_indices_.push_back({start_mti_cross, start_mtj_cross, start_im_cross, start_jm_cross, start_i_cross,
-                   start_j_cross, end_mti_cross, end_mtj_cross, end_im_cross, end_jm_cross, end_i_cross,
-                   end_j_cross, n_loop_operations_total_cross});
-        } else {
+                                           start_j_cross, end_mti_cross, end_mtj_cross, end_im_cross, end_jm_cross, end_i_cross,
+                                           end_j_cross, n_loop_operations_total_cross});
+        }
+        else
+        {
           cross_thread_indices_.push_back({0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
         }
 
@@ -789,7 +802,17 @@ namespace resdata
             (dt_ == 0 || std::fmod(frame_->time, dt_) == 0) &&
             (nskip_ == 0 || std::fmod(frnr, nskip_) == 0))
         {
-
+#ifdef DEBUG
+          // write frame in text
+          std::cout << "Writing frame " << frnr << std::endl;
+          std::fstream out("frame_" + std::to_string(frnr) + ".txt", std::ios::out);
+          for (int i = 0; i < top_.get_n_atoms(); i++)
+          {
+            std::cout << "Writing atom " << i << std::endl;
+            out << frame_->x[i][0] << " " << frame_->x[i][1] << " " << frame_->x[i][2] << std::endl;
+          }
+          out.close();
+#endif
           float weight = 1.0;
           if (!weights_.empty())
           {
@@ -798,18 +821,18 @@ namespace resdata
           }
           for (std::size_t i = 0; i < frame_same_mat_.size(); i++)
           {
-// #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_same_mat_[i].size())))
+            // #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_same_mat_[i].size())))
             for (std::size_t j = 0; j < frame_same_mat_[i].size(); j++)
               frame_same_mat_[i][j] = 100.;
           }
           for (std::size_t i = 0; i < frame_cross_mat_.size(); i++)
           {
-// #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_cross_mat_[i].size())))
+            // #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_cross_mat_[i].size())))
             for (std::size_t j = 0; j < frame_cross_mat_[i].size(); j++)
               frame_cross_mat_[i][j] = 100.;
           }
 
-// #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
+          // #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
           for (int i = 0; i < top_.get_n_mols(); i++)
           {
             clear_rvec(xcm_[i]);
@@ -830,7 +853,20 @@ namespace resdata
               xcm_[i][m] /= tm;
             }
           }
-// #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
+#ifdef DEBUG
+          std::fstream xcmout("frame_xcm_" + std::to_string(frnr) + ".txt", std::ios::out);
+          for (int i = 0; i < top_.get_n_mols(); i++)
+          {
+            xcmout << "Molecule " << i << ": ";
+            for (int j = 0; j < DIM; j++)
+            {
+              xcmout << xcm_[i][j] << " ";
+            }
+            xcmout << std::endl;
+          }
+          xcmout.close();
+#endif
+          // #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
           for (int i = 0; i < top_.get_n_mols(); ++i)
           {
             int mol_id = top_.mol_id(i);
@@ -855,9 +891,22 @@ namespace resdata
               }
             }
           }
-
+#ifdef DEBUG
+          std::fstream rout("frame_res_xcm_" + std::to_string(frnr) + ".txt", std::ios::out);
+          for (int i = 0; i < top_.get_n_mols(); i++)
+          {
+            rout << "Molecule with " << top_.get_res_per_molecule(top_.mol_id(i)) << " residues" << std::endl;
+            rout << "Molecule " << i << ": ";
+            for (int j = 0; j < top_.get_res_per_molecule(top_.mol_id(i)); j++)
+            {
+              rout << res_xcm_[i][j][0] << " " << res_xcm_[i][j][1] << " " << res_xcm_[i][j][2] << std::endl;
+            }
+          }
+          rout.close();
+#endif
           begin = std::chrono::steady_clock::now();
           for (int i = 0; i < top_.get_n_mols(); i++)
+#ifndef DEBUG
           {
             mol_threads_[i] = std::thread(
                 molecule_routine, i, std::cref(top_), xcm_,
@@ -874,7 +923,17 @@ namespace resdata
           {
             thread.join();
           }
-
+#else
+            molecule_routine(i, std::cref(top_), xcm_,
+                             mcut2_, cut_sig_2_, std::cref(density_bins_),
+                             std::cref(res_xcm_), weight,
+                             std::ref(frame_same_mat_), std::ref(frame_cross_mat_),
+                             std::ref(frame_same_mutex_), std::ref(frame_cross_mutex_),
+                             std::ref(intram_mat_density_),
+                             std::ref(interm_same_mat_density_),
+                             std::ref(interm_cross_mat_density_),
+                             intra_, same_, cross_, std::ref(semaphore_));
+#endif
           end = std::chrono::steady_clock::now();
           /* calculate the mindist accumulation indices */
           for (int tid = 0; tid < num_threads_; tid++)
@@ -972,130 +1031,6 @@ namespace resdata
         }
       }
     }
-
-    #include <fstream>
-
-void write_summary_to_file(const std::string& output_path) const
-{
-    std::ofstream out(output_path);
-    if (!out.is_open())
-    {
-        std::cerr << "Error: Could not open file " << output_path << " for writing." << std::endl;
-        return;
-    }
-
-    out << "=== RESData Summary ===\n";
-
-    out << "\nPaths:\n";
-    out << "  Topology path: " << top_path_ << "\n";
-    out << "  Trajectory path: " << trj_path_ << "\n";
-    out << "  Index path: " << index_path_ << "\n";
-
-    out << "\nGeneral Fields:\n";
-    out << "  Number of frames (n_x_): " << n_x_ << "\n";
-    out << "  Time step (dt_): " << dt_ << "\n";
-    out << "  Time begin: " << t_begin_ << " Time end: " << t_end_ << "\n";
-    out << "  nskip: " << nskip_ << "\n";
-
-    out << "\nMolecule Fields:\n";
-    out << "  Simple topology mode: " << (simple_topology_ ? "yes" : "no") << "\n";
-    out << "  Using index: " << (use_index_ ? "yes" : "no") << "\n";
-
-    out << "\nWeights:\n";
-    out << "  Weights path: " << weights_path_ << "\n";
-    out << "  Weights sum: " << weights_sum_ << "\n";
-    out << "  Number of weights: " << weights_.size() << "\n";
-
-    out << "\nPBC Fields:\n";
-    out << "  No PBC: " << (no_pbc_ ? "yes" : "no") << "\n";
-
-    out << "\nFrame Information:\n";
-    // out << "  Number of atoms in residue frame: " << natoms_res << "\n";
-    out << "  Frame pointer valid: " << (frame_ ? "yes" : "no") << "\n";
-    out << "  Trajectory file pointer valid: " << (trj_ ? "yes" : "no") << "\n";
-
-    out << "\nDensity Fields:\n";
-    out << "  Bin size (dx_): " << dx_ << "\n";
-    out << "  Number of bins: " << n_bins_ << "\n";
-    out << "  Density bins size: " << density_bins_.size() << "\n";
-
-    out << "\nParallelization:\n";
-    out << "  Number of threads: " << num_threads_ << "\n";
-    out << "  Number of molecule threads: " << num_mol_threads_ << "\n";
-    out << "  Threads vector size: " << threads_.size() << "\n";
-    out << "  Molecule threads vector size: " << mol_threads_.size() << "\n";
-    out << "  Same thread indices size: " << same_thread_indices_.size() << "\n";
-    for ( std::size_t i = 0; i < same_thread_indices_.size(); ++i)
-    {
-      struct SameThreadIndices {
-        std::size_t start_mti_same;
-        std::size_t start_im_same;
-        std::size_t start_i_same;
-        std::size_t start_j_same;
-        std::size_t end_mti_same;
-        std::size_t end_im_same;
-        std::size_t end_i_same;
-        std::size_t end_j_same;
-        long int n_loop_operations_same;
-      };
-      
-      // struct CrossThreadIndices {
-      //   std::size_t start_mti_cross;
-      //   std::size_t start_mtj_cross;
-      //   std::size_t start_im_cross;
-      //   std::size_t start_jm_cross;
-      //   std::size_t start_i_cross;
-      //   std::size_t start_j_cross;
-      //   std::size_t end_mti_cross;
-      //   std::size_t end_mtj_cross;
-      //   std::size_t end_im_cross;
-      //   std::size_t end_jm_cross;
-      //   std::size_t end_i_cross;
-      //   std::size_t end_j_cross;
-      //   int n_loop_operations_cross;
-      // };
-      
-        out << "    Thread " << i << ": ";
-        out << "       start_mti_same: " << same_thread_indices_[i].start_mti_same << ", "
-            << "       start_im_same: " << same_thread_indices_[i].start_im_same << ", "
-            << "       start_i_same: " << same_thread_indices_[i].start_i_same << ", "
-            << "       start_j_same: " << same_thread_indices_[i].start_j_same << ", "
-            << "       end_mti_same: " << same_thread_indices_[i].end_mti_same << ", "
-            << "       end_im_same: " << same_thread_indices_[i].end_im_same << ", "
-            << "       end_i_same: " << same_thread_indices_[i].end_i_same << ", "
-            << "       end_j_same: " << same_thread_indices_[i].end_j_same << ", "
-            << "       n_loop_operations_same: " << same_thread_indices_[i].n_loop_operations_same << "\n";
-    }
-    out << "  Cross thread indices size: " << cross_thread_indices_.size() << "\n";
-    for ( std::size_t i = 0; i < cross_thread_indices_.size(); ++i)
-    {
-      out << "    Thread " << i << ": ";
-        out << "       start_mti_cross: " << cross_thread_indices_[i].start_mti_cross << ", "
-            << "       start_mtj_cross: " << cross_thread_indices_[i].start_mtj_cross << ", "
-            << "       start_im_cross: " << cross_thread_indices_[i].start_im_cross << ", "
-            << "       start_jm_cross: " << cross_thread_indices_[i].start_jm_cross << ", "
-            << "       start_i_cross: " << cross_thread_indices_[i].start_i_cross << ", "
-            << "       start_j_cross: " << cross_thread_indices_[i].start_j_cross << ", "
-            << "       end_mti_cross: " << cross_thread_indices_[i].end_mti_cross << ", "
-            << "       end_mtj_cross: " << cross_thread_indices_[i].end_mtj_cross << ", "
-            << "       end_im_cross: " << cross_thread_indices_[i].end_im_cross << ", "
-            << "       end_jm_cross: " << cross_thread_indices_[i].end_jm_cross << ", "
-            << "       end_i_cross: " << cross_thread_indices_[i].end_i_cross << ", "
-            << "       end_j_cross: " << cross_thread_indices_[i].end_j_cross << ", "
-            //<< "       n_loop_operations_cross: "  // TODO
-            ;
-    }
-
-    out << "\nMode Selection:\n";
-    out << "  Mode: " << mode_ << "\n";
-    out << "  Intra mode: " << (intra_ ? "yes" : "no") << "\n";
-    out << "  Same mode: " << (same_ ? "yes" : "no") << "\n";
-    out << "  Cross mode: " << (cross_ ? "yes" : "no") << "\n";
-
-    out << "\n=== End of Summary ===\n";
-
-    out.close();
-}
 
     void write_output(const std::string &output_prefix)
     {
