@@ -42,16 +42,6 @@
 #include <xdrfile.h>
 #include <xdrfile_xtc.h>
 
-// #define DEBUG
-#ifdef DEBUG
-#define LOG(x) std::cout << x << std::endl;
-#define STRINGIFY(x) #x
-#define SLOG(x) std::cout << STRINGIFY(x) << std::endl;
-#else
-#define LOG(x)
-#define SLOG(x)
-#endif
-
 namespace resdata
 {
   class RESData
@@ -117,15 +107,6 @@ namespace resdata
     std::string mode_;
     bool intra_ = false, same_ = false, cross_ = false;
 
-    // function types
-    // using ftype_intra_ = resdata::ftypes::function_traits<decltype(&resdata::density::intra_mol_routine)>;
-    // using ftype_same_ = resdata::ftypes::function_traits<decltype(&resdata::density::inter_mol_same_routine)>;
-    // using ftype_cross_ = resdata::ftypes::function_traits<decltype(&resdata::density::inter_mol_cross_routine)>;
-
-    // std::function<ftype_intra_::signature> f_intra_mol_;
-    // std::function<ftype_same_::signature> f_inter_mol_same_;
-    // std::function<ftype_cross_::signature> f_inter_mol_cross_;
-
     static void molecule_routine(
         const int i, const resdata::topology::Topology &top, rvec *xcm,
         float mcut2, float cut_sig_2,
@@ -145,17 +126,6 @@ namespace resdata
       // const std::vector<int> mol_id = top_.mol_id();
       const int access_i = mol_id[i];
 
-      // while (static_cast<int>(mol_i) - top_.get_n_mols(tmp_i) >= 0)
-      // {
-      //   mol_i -= top_.get_n_mols(tmp_i);
-      //   tmp_i++;
-      //   if (tmp_i == top_.get_n_mols())
-      //     break;
-      // }
-      // if (mol_i == top_.get_n_mols(access_i))
-      //   mol_i = 0;
-
-      // int molb = 0;
       for (int j = 0; j < top.get_n_mols(); j++) // check if can be set to 0 => normalization
       {
         const int access_j = top.mol_id(j);
@@ -181,10 +151,7 @@ namespace resdata
           if (top.get_pbc() != nullptr)
             pbc_dx(top.get_pbc(), xcm[i], xcm[j], dx);
           else
-          {
-            std::cout << "No PBC, using no PBC" << std::endl;
             rvec_sub(xcm[i], xcm[j], dx);
-          }
           float dx2 = iprod(dx, dx);
 
           if (dx2 > mcut2)
@@ -202,13 +169,9 @@ namespace resdata
             int delta = gi - gj;
             rvec sym_dx;
             if (top.get_pbc() != nullptr)
-              // pbc_dx(top_.get_pbc(), x[ii], x[jj], sym_dx);
               pbc_dx(top.get_pbc(), group_coms[i][gi], group_coms[j][gj], sym_dx);
             else
-            {
-              std::cout << "No PBC, using no PBC" << std::endl;
               rvec_sub(xcm[i], xcm[j], sym_dx);
-            }
             float dx2 = iprod(sym_dx, sym_dx);
 
             if (i == j)
@@ -238,10 +201,7 @@ namespace resdata
                     if (top.get_pbc() != nullptr)
                       pbc_dx(top.get_pbc(), group_coms[i][gi - delta], group_coms[j][gj + delta], sym_dx);
                     else
-                    {
-                      std::cout << "No PBC, using no PBC" << std::endl;
                       rvec_sub(group_coms[i][gi - delta], group_coms[j][gj + delta], sym_dx);
-                    }
                     dx2 = iprod(sym_dx, sym_dx);
                     if (dx2 < cut_sig_2)
                     {
@@ -276,7 +236,7 @@ namespace resdata
                                                                                                         no_pbc_(no_pbc), dt_(dt), t_begin_(t_begin), t_end_(t_end), top_path_(top_path), trj_path_(traj_path)
     {
       mcut2_ = mol_cutoff_ * mol_cutoff_;
-      cut_sig_2_ = (cutoff_) * (cutoff_);
+      cut_sig_2_ = (cutoff_ + 0.02) * (cutoff_ + 0.02);
 
       initAnalysis();
     }
@@ -301,7 +261,6 @@ namespace resdata
      * @todo Check if molecule block is empty
      */
     {
-      LOG("Initializing analysis");
       bool bTop_;
       // declarations
       std::vector<int> index_;
@@ -328,7 +287,6 @@ namespace resdata
       // matrix boxtop_;
       if (simple_topology_)
       {
-        LOG("Reading simple topology file " << top_path_);
         auto stopol = resdata::io::read_simple_topology(top_path_);
         std::vector<int> n_mol = std::get<2>(stopol);
         for (int mi = 0; mi < std::get<2>(stopol).size(); mi++)
@@ -355,57 +313,37 @@ namespace resdata
       }
       else
       {
-        LOG("Reading topology file " << top_path_);
         gmx_mtop_t *mtop = static_cast<gmx_mtop_t *>(malloc(sizeof(gmx_mtop_t)));
         int natoms;
         matrix boxtop;
 
         PbcType pbcType = read_tpx(top_path_.c_str(), nullptr, boxtop, &natoms, nullptr, nullptr, mtop);
         top_.set_topol_pbc(pbcType, boxtop);
-
-        LOG("Entering loop over mtop->molblock");
         for (const gmx_molblock_t &molb : mtop->molblock)
         {
-          LOG("Processing molblock with nmol: " << molb.nmol << ", type: " << molb.type);
           for (int i = 0; i < molb.nmol; i++)
           {
-            LOG("Processing molecule " << i << " of type " << molb.type);
             int natm_per_mol = mtop->moltype[molb.type].atoms.nr;
-            LOG("Number of atoms per molecule: " << natm_per_mol);
             std::string molecule_name = std::string(mtop->moltype[molb.type].name[molb.type]); // todo check if correct access
-            LOG("Molecule name: " << molecule_name);
             std::vector<std::string> atom_names;
             std::vector<std::string> res_names;
             std::vector<int> res_id;
             t_resinfo *resinfo = mtop->moltype[molb.type].atoms.resinfo;
             char ***atomtype = mtop->moltype[molb.type].atoms.atomname;
-            LOG("Entering loop over atoms in molecule");
             for (int j = 0; j < natm_per_mol; j++)
             {
-              LOG("Processing atom " << j);
               int resi = mtop->moltype[molb.type].atoms.atom[j].resind;
-              LOG("Residue index: " << resi);
               atom_names.push_back(*atomtype[j]);
-              LOG("Atom name: " << *atomtype[j]);
               res_names.push_back(*resinfo[resi].name);
-              LOG("Residue name: " << *resinfo[resi].name);
               res_id.push_back(resi);
-              LOG("Added residue index: " << resi);
             }
             top_.add_molecule(molecule_name, atom_names, res_names, res_id);
-            LOG("Finished processing molecule " << i);
           }
         }
-        LOG("Finished loop over mtop->molblock");
-        LOG("done reading topoloy file");
         free(mtop);
-        LOG("Freed mtop");
       }
       // exit(1);
-      LOG("Filled index array")
-      LOG("Applying index");
       top_.apply_index(index_);
-      LOG("done applying index");
 
       // todo all the vectors should be set https://github.com/multi-ego/multi-eGO/blob/422408d37e5a2455dd24ad9b6f53ecb7c6e396ed/tools/resdata/src/resdata/resdata.hpp#L393
       // if (no_pbc_)
@@ -596,19 +534,14 @@ namespace resdata
       }
       std::cout << "Calculating threading indices" << std::endl;
       /* calculate the mindist accumulation indices */
-      LOG("Calculating same and cross thread indices");
       std::size_t num_ops_same = 0;
-      LOG("NMOLS 0: " << top_.get_n_mols(0));
       for (std::size_t im = 0; im < top_.get_n_moltypes(); im++)
       {
-        LOG("Calculating num_ops_same for molecule type " << im);
         num_ops_same += top_.get_n_mols(im) * (top_.get_res_per_molecule(im) * (top_.get_res_per_molecule(im) + 1)) / 2;
       }
-      LOG("Total num_ops_same: " << num_ops_same);
 
       int n_per_thread_same = (same_) ? num_ops_same / num_threads_ : 0;
       int n_threads_same_uneven = (same_) ? num_ops_same % num_threads_ : 0;
-      LOG("n_per_thread_same: " << n_per_thread_same << ", n_threads_same_uneven: " << n_threads_same_uneven);
 
       std::size_t start_mti_same = 0, start_im_same = 0, end_mti_same = 1, end_im_same = 1;
       std::size_t start_i_same = 0, start_j_same = 0, end_i_same = 0, end_j_same = 0;
@@ -618,49 +551,38 @@ namespace resdata
       {
         for (std::size_t jm = im + 1; jm < top_.get_n_moltypes(); jm++)
         {
-          LOG("Calculating num_ops_cross for molecule types " << im << " and " << jm);
           num_ops_cross += top_.get_n_mols(im) * top_.get_res_per_molecule(im) * top_.get_n_mols(jm) * top_.get_res_per_molecule(jm);
         }
       }
-      LOG("Total num_ops_cross: " << num_ops_cross);
 
       int n_per_thread_cross = (cross_) ? num_ops_cross / num_threads_ : 0;
       int n_threads_cross_uneven = (cross_) ? num_ops_cross % num_threads_ : 0;
-      LOG("n_per_thread_cross: " << n_per_thread_cross << ", n_threads_cross_uneven: " << n_threads_cross_uneven);
 
       std::size_t start_mti_cross = 0, start_mtj_cross = 1, start_im_cross = 0, start_jm_cross = 0, start_i_cross = 0, start_j_cross = 0;
       std::size_t end_mti_cross = 1, end_mtj_cross = 2, end_im_cross = 1, end_jm_cross = 1, end_i_cross = 0, end_j_cross = 0;
 
       for (int tid = 0; tid < num_threads_; tid++)
       {
-        LOG("Processing thread " << tid);
 
         /* calculate same indices */
         int n_loop_operations_same = n_per_thread_same + (tid < n_threads_same_uneven ? 1 : 0);
-        LOG("n_loop_operations_same: " << n_loop_operations_same);
 
         long int n_loop_operations_total_same = n_loop_operations_same;
         while (top_.get_res_per_molecule(end_mti_same - 1) - static_cast<int>(end_j_same) <= n_loop_operations_same)
         {
-          LOG("Inside same loop: end_mti_same=" << end_mti_same << ", end_im_same=" << end_im_same
-                                                << ", end_i_same=" << end_i_same << ", end_j_same=" << end_j_same);
-
           int sub_same = top_.get_res_per_molecule(end_mti_same - 1) - static_cast<int>(end_j_same);
-          LOG("sub_same: " << sub_same);
           n_loop_operations_same -= sub_same;
           end_i_same++;
           end_j_same = end_i_same;
 
           if (static_cast<int>(end_j_same) == top_.get_res_per_molecule(end_mti_same - 1))
           {
-            LOG("Incrementing end_im_same");
             end_im_same++;
             end_i_same = 0;
             end_j_same = 0;
           }
           if (static_cast<int>(end_im_same) - 1 == top_.get_n_mols(end_mti_same - 1))
           {
-            LOG("Incrementing end_mti_same");
             end_mti_same++;
             end_im_same = 1;
             end_i_same = 0;
@@ -673,7 +595,6 @@ namespace resdata
 
         /* calculate cross indices */
         int n_loop_operations_total_cross = n_per_thread_cross + (tid < n_threads_cross_uneven ? 1 : 0);
-        LOG("n_loop_operations_total_cross: " << n_loop_operations_total_cross);
 
         if (top_.get_n_moltypes() > 1)
         {
@@ -682,13 +603,8 @@ namespace resdata
                      (top_.get_res_per_molecule(end_mtj_cross - 1) * static_cast<int>(end_i_cross) + static_cast<int>(end_j_cross)) <=
                  n_loop_operations_cross)
           {
-            LOG("Inside cross loop: end_mti_cross=" << end_mti_cross << ", end_mtj_cross=" << end_mtj_cross
-                                                    << ", end_im_cross=" << end_im_cross << ", end_jm_cross=" << end_jm_cross
-                                                    << ", end_i_cross=" << end_i_cross << ", end_j_cross=" << end_j_cross);
-
             int sub_cross = top_.get_res_per_molecule(end_mti_cross - 1) * top_.get_res_per_molecule(end_mtj_cross - 1) -
                             (top_.get_res_per_molecule(end_mtj_cross - 1) * static_cast<int>(end_i_cross) + static_cast<int>(end_j_cross));
-            LOG("sub_cross: " << sub_cross);
             n_loop_operations_cross -= sub_cross;
 
             end_jm_cross++;
@@ -697,7 +613,6 @@ namespace resdata
 
             if (end_jm_cross > top_.get_n_mols(end_mtj_cross - 1))
             {
-              LOG("Incrementing end_mtj_cross");
               end_mtj_cross++;
               end_jm_cross = 1;
               end_i_cross = 0;
@@ -705,7 +620,6 @@ namespace resdata
             }
             if (end_mtj_cross > top_.get_n_moltypes())
             {
-              LOG("Incrementing end_im_cross");
               end_im_cross++;
               end_mtj_cross = end_mti_cross + 1;
               end_jm_cross = 1;
@@ -714,7 +628,6 @@ namespace resdata
             }
             if (end_im_cross > top_.get_n_mols(end_mti_cross - 1))
             {
-              LOG("Incrementing end_mti_cross");
               end_mti_cross++;
               end_mtj_cross = end_mti_cross + 1;
               end_im_cross = 1;
@@ -739,7 +652,6 @@ namespace resdata
 
         if (same_)
         {
-          LOG("Adding same_thread_indices_ for thread " << tid);
           same_thread_indices_.push_back({start_mti_same, start_im_same, start_i_same, start_j_same, end_mti_same,
                                           end_im_same, end_i_same, end_j_same, n_loop_operations_total_same});
         }
@@ -750,7 +662,6 @@ namespace resdata
 
         if (cross_ && top_.get_n_moltypes() > 1)
         {
-          LOG("Adding cross_thread_indices_ for thread " << tid);
           cross_thread_indices_.push_back({start_mti_cross, start_mtj_cross, start_im_cross, start_jm_cross, start_i_cross,
                                            start_j_cross, end_mti_cross, end_mtj_cross, end_im_cross, end_jm_cross, end_i_cross,
                                            end_j_cross, n_loop_operations_total_cross});
@@ -802,17 +713,6 @@ namespace resdata
             (dt_ == 0 || std::fmod(frame_->time, dt_) == 0) &&
             (nskip_ == 0 || std::fmod(frnr, nskip_) == 0))
         {
-#ifdef DEBUG
-          // write frame in text
-          std::cout << "Writing frame " << frnr << std::endl;
-          std::fstream out("frame_" + std::to_string(frnr) + ".txt", std::ios::out);
-          for (int i = 0; i < top_.get_n_atoms(); i++)
-          {
-            std::cout << "Writing atom " << i << std::endl;
-            out << frame_->x[i][0] << " " << frame_->x[i][1] << " " << frame_->x[i][2] << std::endl;
-          }
-          out.close();
-#endif
           float weight = 1.0;
           if (!weights_.empty())
           {
@@ -853,19 +753,6 @@ namespace resdata
               xcm_[i][m] /= tm;
             }
           }
-#ifdef DEBUG
-          std::fstream xcmout("frame_xcm_" + std::to_string(frnr) + ".txt", std::ios::out);
-          for (int i = 0; i < top_.get_n_mols(); i++)
-          {
-            xcmout << "Molecule " << i << ": ";
-            for (int j = 0; j < DIM; j++)
-            {
-              xcmout << xcm_[i][j] << " ";
-            }
-            xcmout << std::endl;
-          }
-          xcmout.close();
-#endif
           // #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
           for (int i = 0; i < top_.get_n_mols(); ++i)
           {
@@ -891,22 +778,8 @@ namespace resdata
               }
             }
           }
-#ifdef DEBUG
-          std::fstream rout("frame_res_xcm_" + std::to_string(frnr) + ".txt", std::ios::out);
-          for (int i = 0; i < top_.get_n_mols(); i++)
-          {
-            rout << "Molecule with " << top_.get_res_per_molecule(top_.mol_id(i)) << " residues" << std::endl;
-            rout << "Molecule " << i << ": ";
-            for (int j = 0; j < top_.get_res_per_molecule(top_.mol_id(i)); j++)
-            {
-              rout << res_xcm_[i][j][0] << " " << res_xcm_[i][j][1] << " " << res_xcm_[i][j][2] << std::endl;
-            }
-          }
-          rout.close();
-#endif
           begin = std::chrono::steady_clock::now();
           for (int i = 0; i < top_.get_n_mols(); i++)
-#ifndef DEBUG
           {
             mol_threads_[i] = std::thread(
                 molecule_routine, i, std::cref(top_), xcm_,
@@ -919,21 +792,8 @@ namespace resdata
                 std::ref(interm_cross_mat_density_),
                 intra_, same_, cross_, std::ref(semaphore_));
           }
-          for (auto &thread : mol_threads_)
-          {
-            thread.join();
-          }
-#else
-            molecule_routine(i, std::cref(top_), xcm_,
-                             mcut2_, cut_sig_2_, std::cref(density_bins_),
-                             std::cref(res_xcm_), weight,
-                             std::ref(frame_same_mat_), std::ref(frame_cross_mat_),
-                             std::ref(frame_same_mutex_), std::ref(frame_cross_mutex_),
-                             std::ref(intram_mat_density_),
-                             std::ref(interm_same_mat_density_),
-                             std::ref(interm_cross_mat_density_),
-                             intra_, same_, cross_, std::ref(semaphore_));
-#endif
+          for (auto &thread : mol_threads_) thread.join();
+
           end = std::chrono::steady_clock::now();
           /* calculate the mindist accumulation indices */
           for (int tid = 0; tid < num_threads_; tid++)

@@ -7,8 +7,6 @@
 
 #include "indexing.hpp"
 
-#define LOG(x) std::cout << x << std::endl;
-
 namespace resdata::density
 {
 

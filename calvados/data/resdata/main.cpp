@@ -15,7 +15,7 @@ int main(int argc, const char** argv)
   std::cout << "################## Version 0 ################" << std::endl;
   std::cout << "################################################\n" << std::endl;
 
-  double cutoff = 0.55, mol_cutoff = 6.0;
+  double cutoff = 0.75, mol_cutoff = 6.0;
   int nskip = 0, num_threads = 1, mol_threads = -1, dt = 0;
   float t_begin = 0.0, t_end = -1.0;
   char *p_traj_path = NULL, *p_top_path = NULL, *p_mode = NULL, *p_weights_path = NULL, *p_index_path = NULL;
@@ -165,9 +165,6 @@ int main(int argc, const char** argv)
   );
   resdata.run();
   resdata.process_data();
-  #ifdef DEBUG
-  resdata.write_summary_to_file("field_summary.txt");
-  #endif
   resdata.write_output(out_prefix);
 
   return 0;

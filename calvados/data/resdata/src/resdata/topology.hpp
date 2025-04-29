@@ -99,7 +99,6 @@ namespace resdata::topology
     std::vector<int> res_per_molecule;
     std::vector<int> n_atom_per_molecule;
     std::vector<int> mol_id_;
-    // std::vector<int> index_;
     std::vector<int> n_mols;
     std::vector<std::vector<int>> cross_index;
     int n_atoms = 0;
@@ -174,15 +173,6 @@ namespace resdata::topology
       get_atom_name(gai, atomname);
       get_global_residue_index(gai, res_gi);
     }
-    // void set_topol_pbc(t_pbc *pbc)
-    // {
-    //   if (pbc_ != nullptr)
-    //   {
-    //     free(pbc_);
-    //   }
-    //   this->pbc_ = (t_pbc *)malloc(sizeof(t_pbc));
-    //   this->pbc_ = pbc;
-    // }
     void set_topol_pbc(const PbcType &pbcType, const matrix &box)
     {
       if (pbc_ != nullptr)
@@ -351,11 +341,6 @@ namespace resdata::topology
     {
       return n_atoms;
     }
-    // int get_n_atoms( int i, bool type_wise = false ) const
-    // {
-    //   if (type_wise) i = mol_id_[i];
-    //   return n_atom_per_molecule[i];
-    // }
     const std::vector<std::vector<int>> get_cross_index() const
     {
       return cross_index;
@@ -401,102 +386,6 @@ namespace resdata::topology
       {
         free(pbc_);
       }
-    }
-
-    void print_topology_summary(const std::string &path) const
-    {
-      std::ofstream outFile(path);
-      if (!outFile.is_open())
-      {
-        throw std::runtime_error("Failed to open file for writing: " + path);
-      }
-
-      outFile << "Topology Summary:\n";
-      outFile << "--------------------\n";
-      outFile << "Total number of molecules: " << get_n_mols() << "\n";
-      outFile << "Total number of unique molecule types: " << get_n_moltypes() << "\n";
-      outFile << "Total number of atoms: " << get_n_atoms() << "\n\n";
-
-      for (std::size_t moltype = 0; moltype < n_mols.size(); ++moltype)
-      {
-        outFile << "Molecule Type " << moltype << ":\n";
-        outFile << "  Number of molecules: " << n_mols[moltype] << "\n";
-        outFile << "  Number of atoms per molecule: " << n_atom_per_molecule[moltype] << "\n";
-        outFile << "  Number of residues per molecule: " << res_per_molecule[moltype] << "\n";
-        outFile << "  Residues:\n";
-
-        const auto &resnames = residue_names[moltype];
-        const auto &atomsperres = atoms_per_residue[moltype];
-        std::size_t atom_counter = 0;
-
-        for (std::size_t resi = 0; resi < atomsperres.size(); ++resi)
-        {
-          if (atom_counter < resnames.size())
-          {
-            outFile << "    Residue " << resi << " (" << resnames[atom_counter] << "): "
-                    << atomsperres[resi] << " atoms\n";
-          }
-          else
-          {
-            outFile << "    Residue " << resi << " (UNKNOWN): " << atomsperres[resi] << " atoms\n";
-          }
-          atom_counter += atomsperres[resi];
-        }
-        outFile << "\n";
-      }
-
-      outFile << "--------------------\n";
-      if (pbc_ != nullptr)
-      {
-        outFile << "Periodic Boundary Conditions:\n";
-        outFile << "  Type (int value): " << static_cast<int>(pbc_->pbcType) << "\n";
-        outFile << "  Box matrix:\n";
-        for (int i = 0; i < 3; ++i)
-        {
-          outFile << "    [" << pbc_->box[i][0] << ", "
-                  << pbc_->box[i][1] << ", "
-                  << pbc_->box[i][2] << "]\n";
-        }
-      }
-      else
-      {
-        outFile << "No periodic boundary conditions set.\n";
-      }
-      // print the partitioning
-      outFile << "Molecule Partitioning:\n";
-      for (std::size_t i = 0; i < mols.size(); ++i)
-      {
-        outFile << "  Partition " << i << ": ";
-        for (const auto &atom : mols[i])
-        {
-          outFile << atom << " ";
-        }
-        outFile << "\n";
-      }
-      outFile << "--------------------\n";
-      outFile << "Cross Index:\n";
-      for (std::size_t i = 0; i < cross_index.size(); ++i)
-      {
-        outFile << "  Cross Index for molecule type " << i << ": ";
-        for (const auto &index : cross_index[i])
-        {
-          outFile << index << " ";
-        }
-        outFile << "\n";
-      }
-      outFile << "--------------------\n";
-      outFile << "Residue local indices:\n";
-      for (std::size_t i = 0; i < get_local_residue_index().size(); ++i)
-      {
-        outFile << "  Residue local index for molecule type " << i << ": ";
-        for (const auto &index : get_local_residue_index(i))
-        {
-          outFile << index << " ";
-        }
-        outFile << "\n";
-      }
-
-      outFile.close();
     }
 
     void apply_index(const std::vector<int> index)
