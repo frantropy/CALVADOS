@@ -13,10 +13,8 @@
 #include <numeric>
 
 #include "function_types.hpp"
-// #include "lgmx.hpp"
 
 #include <iostream>
-#define LOG(x) std::cout << x << std::endl;
 
 /**
  * NOTES

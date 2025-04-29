@@ -19,7 +19,6 @@
 #include "xtc_frame.hpp"
 #include "function_types.hpp"
 #include "topology.hpp"
-#include "lgmx.hpp"
 
 // standard library imports
 #include <iostream>

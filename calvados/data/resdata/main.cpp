@@ -23,28 +23,29 @@ int main(int argc, const char** argv)
   std::string traj_path, top_path, mode, weights_path, index_path;
   std::string out_prefix;
   int *p_nopbc = NULL;
+  int *p_simple_topology = NULL;
   bool nopbc = false;
   bool simple_topology = false;
 
   // make popt options
   struct poptOption optionsTable[] = {
     POPT_AUTOHELP
-    {"traj",        'f',  POPT_ARG_STRING,                          &p_traj_path,     0, "Trajectory file",             "FILE"},
-    {"top",         's',  POPT_ARG_STRING,                          &p_top_path,      0, "Topology file",               "FILE"},
-    {"t_begin",     'b',  POPT_ARG_FLOAT | POPT_ARGFLAG_OPTIONAL,   &t_begin,         0, "Start time",                  "FLOAT"},
-    {"t_end",       'e',  POPT_ARG_FLOAT | POPT_ARGFLAG_OPTIONAL,   &t_end,           0, "End time",                    "FLOAT"},
-    {"out",         'o',  POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_out_prefix,    0, "Output prefix",               "STRING"},
-    {"index",       'n',  POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_index_path,    0, "Index file   ",               "FILE"},
-    {"dt",          '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &dt,              0, "Time step",                   "INT"},
-    {"cutoff",      '\0', POPT_ARG_DOUBLE | POPT_ARGFLAG_OPTIONAL,  &cutoff,          0, "Cutoff distance",             "DOUBLE"},
-    {"mol_cutoff",  '\0', POPT_ARG_DOUBLE | POPT_ARGFLAG_OPTIONAL,  &mol_cutoff,      0, "Molecule cutoff distance",    "DOUBLE"},
-    {"nskip",       '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &nskip,           0, "Number of frames to skip",    "INT"},
-    {"num_threads", '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &num_threads,     0, "Number of threads",           "INT"},
-    {"mol_threads", '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &mol_threads,     0, "Number of molecule threads",  "INT"},
-    {"mode",        '\0', POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_mode,          0, "Mode of operation",           "STRING"},
-    {"weights",     '\0', POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_weights_path,  0, "Weights file",                "FILE"},
-    {"no_pbc",      '\0', POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &p_nopbc,         0, "Ignore pbcs",                 0},
-    {"simple_top",  '\0', POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &simple_topology, 0, "Use simple topology",         0},
+    {"traj",        'f',  POPT_ARG_STRING,                          &p_traj_path,       0, "Trajectory file",             "FILE"},
+    {"top",         's',  POPT_ARG_STRING,                          &p_top_path,        0, "Topology file",               "FILE"},
+    {"t_begin",     'b',  POPT_ARG_FLOAT | POPT_ARGFLAG_OPTIONAL,   &t_begin,           0, "Start time",                  "FLOAT"},
+    {"t_end",       'e',  POPT_ARG_FLOAT | POPT_ARGFLAG_OPTIONAL,   &t_end,             0, "End time",                    "FLOAT"},
+    {"out",         'o',  POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_out_prefix,      0, "Output prefix",               "STRING"},
+    {"index",       'n',  POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_index_path,      0, "Index file   ",               "FILE"},
+    {"dt",          '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &dt,                0, "Time step",                   "INT"},
+    {"cutoff",      '\0', POPT_ARG_DOUBLE | POPT_ARGFLAG_OPTIONAL,  &cutoff,            0, "Cutoff distance",             "DOUBLE"},
+    {"mol_cutoff",  '\0', POPT_ARG_DOUBLE | POPT_ARGFLAG_OPTIONAL,  &mol_cutoff,        0, "Molecule cutoff distance",    "DOUBLE"},
+    {"nskip",       '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &nskip,             0, "Number of frames to skip",    "INT"},
+    {"num_threads", '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &num_threads,       0, "Number of threads",           "INT"},
+    {"mol_threads", '\0', POPT_ARG_INT | POPT_ARGFLAG_OPTIONAL,     &mol_threads,       0, "Number of molecule threads",  "INT"},
+    {"mode",        '\0', POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_mode,            0, "Mode of operation",           "STRING"},
+    {"weights",     '\0', POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_weights_path,    0, "Weights file",                "FILE"},
+    {"no_pbc",      '\0', POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &p_nopbc,           0, "Ignore pbcs",                 0},
+    {"simple_top",  '\0', POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &p_simple_topology, 0, "Use simple topology",         0},
     POPT_TABLEEND
   };
 
@@ -75,6 +76,11 @@ int main(int argc, const char** argv)
   {
     std::cout << "Ignoring periodic boundary conditions!" << std::endl;
     nopbc = true;
+  }
+  if ( p_simple_topology != NULL )
+  {
+    std::cout << "Using simple topology!" << std::endl;
+    simple_topology = true;
   }
   // check if paths are valid
   if ( !std::filesystem::exists(std::filesystem::path(traj_path)) )
