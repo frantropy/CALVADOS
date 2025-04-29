@@ -445,10 +445,6 @@ namespace resdata
       {
         res_xcm_[i] = (rvec *)malloc(top_.get_res_per_molecule(top_.mol_id(i)) * sizeof(rvec));
       }
-      // for (int i = 0; i < top_.get_n_mols(); i++)
-      // {
-      // res_xcm_[i].resize(top_.get_res_per_molecule(i));
-      // }
 
       if (same_)
       {
@@ -475,9 +471,6 @@ namespace resdata
       for (std::size_t i = 0; i < density_bins_.size(); i++)
         density_bins_[i] = cutoff_ / static_cast<float>(density_bins_.size()) * static_cast<float>(i) + cutoff_ / static_cast<float>(density_bins_.size() * 2);
 
-      // int cross_count = 0;
-      // if (cross_)
-      // cross_index_.resize(top_.get_n_moltypes(), std::vector<int>(top_.get_n_moltypes(), 0));
       for (std::size_t i = 0; i < top_.get_n_moltypes(); i++)
       {
         if (same_)
@@ -494,8 +487,6 @@ namespace resdata
           int cross_index = top_.get_cross_index(i, j);
           interm_cross_mat_density_[cross_index].resize(top_.get_res_per_molecule(i), std::vector<std::vector<float>>(top_.get_res_per_molecule(j), std::vector<float>(resdata::indexing::n_bins(cutoff_), 0)));
           interm_cross_maxcdf_mol_[cross_index].resize(top_.get_res_per_molecule(i), std::vector<std::vector<float>>(top_.get_res_per_molecule(j), std::vector<float>(resdata::indexing::n_bins(cutoff_), 0)));
-          // cross_index_[i][j] = cross_count;
-          // cross_count++;
         }
       }
 
@@ -530,7 +521,6 @@ namespace resdata
         printf("Found %li frame weights in file\n", weights_.size());
         float w_sum = std::accumulate(std::begin(weights_), std::end(weights_), 0.0, std::plus<>());
         printf("Sum of weights amounts to %lf\n", w_sum);
-        // weights_sum_ = 0.;
       }
       std::cout << "Calculating threading indices" << std::endl;
       /* calculate the mindist accumulation indices */
@@ -721,18 +711,18 @@ namespace resdata
           }
           for (std::size_t i = 0; i < frame_same_mat_.size(); i++)
           {
-            // #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_same_mat_[i].size())))
+            #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_same_mat_[i].size())))
             for (std::size_t j = 0; j < frame_same_mat_[i].size(); j++)
               frame_same_mat_[i][j] = 100.;
           }
           for (std::size_t i = 0; i < frame_cross_mat_.size(); i++)
           {
-            // #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_cross_mat_[i].size())))
+            #pragma omp parallel for num_threads(std::min(num_threads_, static_cast<int>(frame_cross_mat_[i].size())))
             for (std::size_t j = 0; j < frame_cross_mat_[i].size(); j++)
               frame_cross_mat_[i][j] = 100.;
           }
 
-          // #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
+          #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
           for (int i = 0; i < top_.get_n_mols(); i++)
           {
             clear_rvec(xcm_[i]);
@@ -753,7 +743,7 @@ namespace resdata
               xcm_[i][m] /= tm;
             }
           }
-          // #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
+          #pragma omp parallel for num_threads(std::min(num_threads_, top_.get_n_mols()))
           for (int i = 0; i < top_.get_n_mols(); ++i)
           {
             int mol_id = top_.mol_id(i);
@@ -769,7 +759,6 @@ namespace resdata
               int ires = top_.get_local_residue_index(mol_id, ai);
               rvec_inc(res_xcm_[i][ires], frame_->x[ii]);
             }
-            // int n_res = top_.get_res_per_molecule(mol_id);
             for (int j = 0; j < top_.get_res_per_molecule(mol_id); ++j)
             {
               for (int k = 0; k < DIM; ++k)
