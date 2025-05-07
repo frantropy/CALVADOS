@@ -11,6 +11,7 @@
 #include <vector>
 #include <algorithm>
 #include <numeric>
+#include <unordered_set>
 
 #include "function_types.hpp"
 
@@ -76,10 +77,7 @@ namespace resdata::topology
     auto front() const { return partition.front(); }
     auto back() const { return partition.back(); }
     bool empty() const { return partition.empty(); }
-    void erase(std::size_t i)
-    {
-      partition.erase(std::begin(partition) + i);
-    }
+    void erase(std::size_t i) { partition.erase(std::begin(partition) + i); }
   };
 
   class Topology
@@ -92,7 +90,6 @@ namespace resdata::topology
     std::vector<std::vector<int>> atoms_per_residue;
     std::vector<float> inv_num_mol;
     std::vector<std::vector<std::string>> residue_names;
-    std::vector<int> global_residue_indices;
     std::vector<std::vector<int>> residue_indices;
     std::vector<int> res_per_molecule;
     std::vector<int> n_atom_per_molecule;
@@ -150,10 +147,6 @@ namespace resdata::topology
     {
       atomname = global_atom_names[gai];
     }
-    void get_global_residue_index(int gai, int &res_gi) const
-    {
-      res_gi = global_residue_indices[gai];
-    }
     std::vector<std::vector<int>> get_local_residue_index() const
     {
       return residue_indices;
@@ -165,11 +158,6 @@ namespace resdata::topology
     int get_local_residue_index(int mi, int i)
     {
       return residue_indices[mi][i];
-    }
-    void get_global_resi_atom(int gai, std::string atomname, int &res_gi) const
-    {
-      get_atom_name(gai, atomname);
-      get_global_residue_index(gai, res_gi);
     }
     void set_topol_pbc(const PbcType &pbcType, const matrix &box)
     {
@@ -227,6 +215,25 @@ namespace resdata::topology
       std::iota(std::begin(indices), std::end(indices), 0);
       return indices;
     }
+    std::vector<std::vector<int>> build_cross_index( const std::vector<int> &mid )
+    {
+      std::vector<std::vector<int>> cross_idx(mid.size(), std::vector<int>(mid.size()));
+      int cross_id = 0;
+      for ( int i = 0; i < mid.size(); ++i )
+      {
+        for ( int j = i; j < mid.size(); ++j )
+        {
+          cross_idx[i][j] = cross_id;
+          cross_idx[j][i] = cross_id;
+          ++cross_id;
+        }
+      }
+
+      return cross_idx;
+    }
+    /**
+     * @todo Add proper cross index generation
+     */
     void add_molecule(
         const std::string &molecule_name, const std::vector<std::string> &atom_names,
         const std::vector<std::string> &residue_names, const std::vector<int> &residue_indices,
@@ -253,22 +260,22 @@ namespace resdata::topology
 
           mol_id_.push_back(id);
           int ci_max = 0;
-          for (auto row : cross_index)
-          {
-            for (auto col : row)
-            {
-              if (col > ci_max)
-              {
-                ci_max = col;
-              }
-            }
-          }
+          // for (auto row : cross_index)
+          // {
+          //   for (auto col : row)
+          //   {
+          //     if (col > ci_max)
+          //     {
+          //       ci_max = col;
+          //     }
+          //   }
+          // }
 
-          for (int j = 0; j < cross_index.size(); ++j)
-          {
-            cross_index[j].push_back(ci_max++);
-          }
-          cross_index.push_back(std::vector<int>(1, ci_max));
+          // for (int j = 0; j < cross_index.size(); ++j)
+          // {
+          //   cross_index[j].push_back(ci_max++);
+          // }
+          // cross_index.push_back(std::vector<int>(1, ci_max));
 
           mol_name_to_id.insert({molecule_name, id});
           std::vector<int> mapped_residue_indices(residue_indices.size());
@@ -322,18 +329,20 @@ namespace resdata::topology
         n_atoms += atom_names.size();
         mols.add_partition(atom_names.size());
 
-        int global_res_index = (global_residue_indices.empty()) ? 0 : global_residue_indices.back() + 1;
+        // int global_res_index = (global_residue_indices.empty()) ? 0 : global_residue_indices.back() + 1;
 
-        for (int ri = 0; ri < residue_names.size(); ++ri)
-        {
-          global_residue_indices.push_back(global_res_index + ri);
-        }
+        // for (int ri = 0; ri < residue_names.size(); ++ri)
+        // {
+        //   global_residue_indices.push_back(global_res_index + ri);
+        // }
 
         for (int j = 0; j < atom_names.size(); ++j)
         {
           global_atom_names.push_back(atom_names[j]);
         }
       }
+
+      cross_index = build_cross_index(mol_id_);
     }
     int get_n_atoms() const
     {
@@ -386,60 +395,122 @@ namespace resdata::topology
       }
     }
 
-    void apply_index(const std::vector<int> index)
+    void apply_index( const std::vector<int> &index )
     {
       if (index.empty()) return;
-      std::vector<int> to_remove;
-      for (int mbi = 0; mbi < mols.size(); mbi++)
+
+      std::unordered_set<int> index_set(index.begin(), index.end());
+
+      RangePartitioning new_mols;
+      std::vector<std::vector<std::string>> new_atom_names;
+      std::vector<std::string> new_global_atom_names;
+      std::vector<std::vector<int>> new_atoms_per_residue;
+      std::vector<float> new_inv_num_mol;
+      std::vector<std::vector<std::string>> new_residue_names;
+      std::vector<std::vector<int>> new_residue_indices;
+      std::vector<int> new_res_per_molecule;
+      std::vector<int> new_n_atom_per_molecule;
+      std::vector<int> new_mol_id_;
+      std::vector<int> new_n_mols(n_mols.size(), 0);
+      std::vector<int> index_map(n_atoms, -1); // maps old atom index -> new atom index
+      int new_atom_index = 0;
+
+      int global_atom_count = 0;
+
+      std::vector<int> local_properties_updated;
+
+      for (size_t mol_idx = 0; mol_idx < mols.size(); ++mol_idx)
       {
-        for (int j = 0; j < mols[mbi].size(); j++)
+        const auto &mol = mols[mol_idx];
+        std::vector<int> filtered_atoms;
+
+        for (int atom : mol)
         {
-          if (std::find(std::begin(index), std::end(index), mols[mbi][j]) == std::end(index))
+          if (index_set.count(atom))
           {
-            to_remove.push_back(mbi);
-            break;
+            filtered_atoms.push_back(atom);
+            index_map[atom] = new_atom_index++;
           }
         }
-      }
-      std::reverse(std::begin(to_remove), std::end(to_remove));
-      for (auto i : to_remove)
-      {
-        mols.erase(i);
-        int id = mol_id_[i];
-        mol_id_.erase(std::begin(mol_id_) + i);
-        n_mols[id]--;
-        n_atoms -= n_atom_per_molecule[id];
 
-        if (n_mols[id] < 1)
+        if (filtered_atoms.empty()) continue;
+
+        new_mols.add_partition(filtered_atoms);
+
+        int mol_type = mol_id_[mol_idx];
+        new_mol_id_.push_back(mol_type);
+        new_n_mols[mol_type]++;
+
+        std::vector<std::string> mol_atom_names;
+        std::vector<std::string> mol_residue_names;
+        std::vector<int> mol_residue_indices;
+        std::vector<int> mol_atoms_per_res;
+        const auto &res_idx = residue_indices[mol_type];
+        const auto &res_names = residue_names[mol_type];
+        const auto &atom_names_list = atom_names[mol_type];
+
+        int prev_res = -1;
+        int atom_per_res_count = 0;
+
+        bool type_already_updated = std::end(local_properties_updated) != std::find(
+          std::begin(local_properties_updated), std::end(local_properties_updated), mol_type
+        );
+        if (type_already_updated) continue;
+        for (int atom_local_idx = 0; atom_local_idx < filtered_atoms.size(); ++atom_local_idx)
         {
-          atom_names.erase(std::begin(atom_names) + i);
-          residue_names.erase(std::begin(residue_names) + i);
-          residue_indices.erase(std::begin(residue_indices) + i);
-          res_per_molecule.erase(std::begin(res_per_molecule) + id);
-          n_atom_per_molecule.erase(std::begin(n_atom_per_molecule) + id);
-          atoms_per_residue.erase(std::begin(atoms_per_residue) + id);
-          n_mols.erase(std::begin(n_mols) + id);
-          std::string molecule_name;
-          for (const auto &it : mol_name_to_id)
-          {
-            if (it.second == id)
-            {
-              molecule_name = it.first;
-              break;
-            }
-          }
-          mol_name_to_id.erase(molecule_name);
+          int global_atom_idx = filtered_atoms[atom_local_idx];
+          int local_filtered_atom_idx = global_atom_idx - mol.front();
 
-          for (int j = 0; j < mol_id_.size(); ++j)
+          mol_atom_names.push_back(atom_names_list[local_filtered_atom_idx]);
+          new_global_atom_names.push_back(atom_names_list[local_filtered_atom_idx]);
+
+          int local_res_idx = res_idx[local_filtered_atom_idx];
+          mol_residue_indices.push_back(local_res_idx);
+          mol_residue_names.push_back(res_names[local_res_idx]);
+
+          if (prev_res == -1 || local_res_idx != prev_res)
           {
-            mol_id_[j]--;
+            if (atom_per_res_count > 0)
+              mol_atoms_per_res.push_back(atom_per_res_count);
+            atom_per_res_count = 1;
+            prev_res = local_res_idx;
           }
-          for (auto &it : mol_name_to_id)
+          else
           {
-            it.second--;
+            atom_per_res_count++;
           }
         }
+        if (atom_per_res_count > 0) mol_atoms_per_res.push_back(atom_per_res_count);
+
+        new_atom_names.push_back(mol_atom_names);
+        new_residue_names.push_back(mol_residue_names);
+        new_residue_indices.push_back(mol_residue_indices);
+        new_atoms_per_residue.push_back(mol_atoms_per_res);
+        new_res_per_molecule.push_back(mol_atoms_per_res.size());
+        new_n_atom_per_molecule.push_back(mol_atom_names.size());
       }
+
+      new_inv_num_mol.resize(new_n_mols.size());
+      for (size_t i = 0; i < new_n_mols.size(); ++i)
+      {
+        new_inv_num_mol[i] = new_n_mols[i] > 0 ? 1.0f / static_cast<float>(new_n_mols[i]) : 0.0f;
+      }
+
+      std::vector<std::vector<int>> cidx = build_cross_index(new_mol_id_);
+
+      mols = std::move(new_mols);
+      atom_names = std::move(new_atom_names);
+      global_atom_names = std::move(new_global_atom_names);
+      atoms_per_residue = std::move(new_atoms_per_residue);
+      inv_num_mol = std::move(new_inv_num_mol);
+      residue_names = std::move(new_residue_names);
+      residue_indices = std::move(new_residue_indices);
+      res_per_molecule = std::move(new_res_per_molecule);
+      n_atom_per_molecule = std::move(new_n_atom_per_molecule);
+      mol_id_ = std::move(new_mol_id_);
+      n_mols = std::move(new_n_mols);
+      n_atoms = index.size();
+      cross_index = std::move(cidx);
     }
   };
 } // namespace resdata::topology

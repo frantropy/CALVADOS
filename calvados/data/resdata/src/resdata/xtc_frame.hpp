@@ -16,7 +16,7 @@ public:
   int64_t *offsets;
   int step;
   float time;
-  matrix box;
+  matrix box = {{0,0,0}, {0,0,0}, {0,0,0}};
   rvec *x;
   float prec;
 

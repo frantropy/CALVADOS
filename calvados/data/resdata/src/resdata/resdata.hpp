@@ -267,20 +267,42 @@ namespace resdata
       // read the index file
       if (std::filesystem::exists(std::filesystem::path(index_path_)))
       {
-        throw std::runtime_error("Index file not implemented yet");
-        // TODO read the index and then parse and then apply
-        // int atm_i = 0;
-        // for ( int &molb_i : top_.get_molblock_indices() )
-        // {
-        //   // int atom_n = mtop_->moltype[molb.type].atoms.nr;
-        //   int atom_n = top_.get_molblocks()[molb_i].size();
-        //   for ( int i = 0; i < atom_n ; i++)
-        //   {
-        //     if (atom_n == 0) continue;
-        //     index_.push_back(atm_i);
-        //     atm_i++;
-        //   }
-        // }
+        std::tuple<std::vector<std::string>, std::vector<std::vector<int>>> selection = resdata::io::read_index_file(index_path_);
+        std::vector<std::string> index_names = std::get<0>(selection);
+        std::vector<std::vector<int>> indices = std::get<1>(selection);
+        while (true)
+        {
+          std::string selected_index;
+          std::cout << "Chose system to run the analysis on: " << std::endl;
+          for ( int i = 0; i < index_names.size(); i++)
+          {
+            std::cout << i << ": " << index_names[i] << std::endl; 
+          }
+          std::cout << "Please select the index: ";
+          std::cin >> selected_index;
+          int selected_index_int;
+          try 
+          {
+            selected_index_int = std::stoi(selected_index);
+          }
+          catch (const std::invalid_argument &e)
+          {
+            std::cout << "Invalid selection. Please try again." << std::endl;
+            continue;
+          }
+          catch (const std::out_of_range &e)
+          {
+            std::cout << "Invalid selection. Please try again." << std::endl;
+            continue;
+          }
+          if (selected_index_int < 0 || selected_index_int >= index_names.size())
+          {
+            std::cout << "Invalid selection. Please try again." << std::endl;
+            continue;
+          }
+          index_ = indices[selected_index_int];
+          break;
+        }
       }
 
       // matrix boxtop_;
@@ -312,10 +334,9 @@ namespace resdata
       }
       else
       {
-        gmx_mtop_t *mtop = static_cast<gmx_mtop_t *>(malloc(sizeof(gmx_mtop_t)));
+        gmx_mtop_t *mtop = new gmx_mtop_t();
         int natoms;
         matrix boxtop;
-
         PbcType pbcType = read_tpx(top_path_.c_str(), nullptr, boxtop, &natoms, nullptr, nullptr, mtop);
         top_.set_topol_pbc(pbcType, boxtop);
         for (const gmx_molblock_t &molb : mtop->molblock)
@@ -339,9 +360,10 @@ namespace resdata
             top_.add_molecule(molecule_name, atom_names, res_names, res_id);
           }
         }
-        free(mtop);
+        delete mtop;
       }
-      // exit(1);
+      std::cout << "Applying index" << std::endl;
+      std::this_thread::sleep_for(std::chrono::milliseconds(2000));
       top_.apply_index(index_);
 
       // todo all the vectors should be set https://github.com/multi-ego/multi-eGO/blob/422408d37e5a2455dd24ad9b6f53ecb7c6e396ed/tools/resdata/src/resdata/resdata.hpp#L393
@@ -364,10 +386,6 @@ namespace resdata
       // define index
       n_x_ = 0;
       xcm_ = (rvec *)malloc(top_.get_n_mols() * sizeof(rvec));
-      // xcm_.resize(top_.get_n_mols());
-
-      // CREATE VECTOR of RESIDUE indeces to map atom to residue
-      printf("\nAssigning residue index to atoms\n");
 
       printf("Evaluating mode selection:\n");
       std::string tmp_mode;
@@ -726,10 +744,11 @@ namespace resdata
           {
             clear_rvec(xcm_[i]);
             float tm = 0.;
-            int from = top_.molblock(i).front();
-            int to = top_.molblock(i).back() + 1;
+            // int from = top_.molblock(i).front();
+            // int to = top_.molblock(i).back() + 1;
+            std::vector<int> molb = top_.molblock(i);
             // for (int ii = top_.molblock(i).front(); ii < top_.molblock(i).back() + 1; ii++)
-            for (int ii = from; ii < to; ii++)
+            for ( auto ii : molb )
             {
               for (int m = 0; (m < DIM); m++)
               {
@@ -751,12 +770,15 @@ namespace resdata
             {
               clear_rvec(res_xcm_[i][j]);
             }
-            int from = top_.molblock(i).front();
-            int to = top_.molblock(i).back() + 1;
-            for (int ii = from, ai = 0; ii < to; ++ii, ++ai)
+            // int from = top_.molblock(i).front();
+            // int to = top_.molblock(i).back() + 1;
+            std::vector<int> molb = top_.molblock(i);
+            int ai = 0;
+            for ( auto ii : molb )
             {
               int ires = top_.get_local_residue_index(mol_id, ai);
               rvec_inc(res_xcm_[i][ires], frame_->x[ii]);
+              ++ai;
             }
             for (int j = 0; j < top_.get_res_per_molecule(mol_id); ++j)
             {
