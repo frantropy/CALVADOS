@@ -242,9 +242,6 @@ namespace resdata
 
     ~RESData()
     {
-      free(frame_->x);
-      free(frame_->offsets);
-      free(frame_);
       free(xcm_);
       for (int i = 0; i < top_.get_n_mols(); i++)
       {
@@ -794,7 +791,7 @@ namespace resdata
             mol_threads_[i] = std::thread(
                 molecule_routine, i, std::cref(top_), xcm_,
                 mcut2_, cut_sig_2_, std::cref(density_bins_),
-                std::cref(res_xcm_), weight,
+                res_xcm_, weight,
                 std::ref(frame_same_mat_), std::ref(frame_cross_mat_),
                 std::ref(frame_same_mutex_), std::ref(frame_cross_mutex_),
                 std::ref(intram_mat_density_),
