@@ -604,7 +604,7 @@ if __name__ == "__main__":
         help='Path to the directory containing the histograms. The histogram files should contain the prefix "intra_" for intra molecular contact descriptions and "inter_" for  inter molecular.',
     )
     parser.add_argument(
-        "--top",
+        "--target_top",
         required=True,
         help="Path to the topology file of the system on which the histograms were calculated on",
     )
