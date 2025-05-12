@@ -482,9 +482,31 @@ namespace resdata::topology
         }
         if (atom_per_res_count > 0) mol_atoms_per_res.push_back(atom_per_res_count);
 
+        // map residue indices to new indices
+        std::vector<int> unique_res_indices;
+        for ( int i = 0; i < mol_residue_indices.size(); ++i )
+        {
+          if ( std::find( std::begin(unique_res_indices), std::end(unique_res_indices), mol_residue_indices[i] ) == std::end(unique_res_indices) )
+          {
+            unique_res_indices.push_back(mol_residue_indices[i]);
+          }
+        }
+        std::vector<int> unique_res_indices_new(unique_res_indices.size());
+        std::iota(std::begin(unique_res_indices_new), std::end(unique_res_indices_new), 0);
+        std::unordered_map<int, int> res2res_map;
+        for ( int i = 0; i < unique_res_indices.size(); ++i )
+        {
+          res2res_map[unique_res_indices[i]] = unique_res_indices_new[i];
+        }
+        std::vector<int> mol_residue_indices_mapped(unique_res_indices.size());
+        for (size_t j = 0; j < unique_res_indices.size(); ++j)
+        {
+          mol_residue_indices_mapped[j] = res2res_map[mol_residue_indices[j]];
+        }
+
         new_atom_names.push_back(mol_atom_names);
         new_residue_names.push_back(mol_residue_names);
-        new_residue_indices.push_back(mol_residue_indices);
+        new_residue_indices.push_back(mol_residue_indices_mapped);
         new_atoms_per_residue.push_back(mol_atoms_per_res);
         new_res_per_molecule.push_back(mol_atoms_per_res.size());
         new_n_atom_per_molecule.push_back(mol_atom_names.size());

@@ -5,19 +5,16 @@ import tempfile
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from multiego.resources import type_definitions
-from multiego.util import masking
-from multiego import io
+# from multiego.resources import type_definitions
+# from multiego.util import masking
+# from multiego import io
 
 import argparse
 import multiprocessing
 import numpy as np
 import pandas as pd
-import parmed as pmd
 import time
-import warnings
 import tarfile
-import h5py
 from scipy.special import logsumexp
 
 # d = {
@@ -26,6 +23,110 @@ from scipy.special import logsumexp
 # }
 
 COLUMNS = ["mi", "ai", "mj", "aj", "c12dist", "p", "cutoff"]
+
+def read_simple_topology(path):
+    """
+    Reads a simple topology file and extracts box dimensions, periodic boundary conditions (PBC),
+    molecule information, atom names, residue names, and residue numbers.
+
+    Parameters
+    ----------
+    path : str
+        Path to the topology file.
+
+    Returns
+    -------
+    tuple
+        A tuple containing:
+        - box (list of list of float): Box dimensions.
+        - pbc (str): Periodic boundary condition value.
+        - n_mol (list of int): Number of molecules.
+        - molecules (list of str): Molecule names.
+        - atom_names (list of list of str): Atom names for each molecule.
+        - residue_names (list of list of str): Residue names for each molecule.
+        - residue_numbers (list of list of int): Residue numbers for each molecule.
+    """
+    box_found = False
+    molecule_found = False
+    pbc_found = False
+    box = []
+    pbc = None
+    n_mol = []
+    molecules = []
+    atom_names = []
+    residue_names = []
+    residue_numbers = []
+
+    try:
+        with open(path, 'r') as infile:
+            for line in infile:
+                line = line.strip()
+                if not line:
+                    print("Detected empty line. Skipping...")
+                    continue
+
+                if "box" in line:
+                    if box_found:
+                        raise RuntimeError("Multiple box definitions found in the topology file")
+                    box_found = True
+                    values = line.split()
+                    for i in range(1, len(values), 3):
+                        box.append([float(values[i]), float(values[i + 1]), float(values[i + 2])])
+
+                elif "molecule" in line:
+                    molecule_found = True
+                    values = line.split()
+                    molecule_name = values[1]
+                    molecules.append(molecule_name)
+                    atom_names.append([])
+                    residue_names.append([])
+                    residue_numbers.append([])
+
+                    for value in values[2:]:
+                        if value.isdigit():
+                            n_mol.append(int(value))
+                            break
+                        else: # TODO check if this is correct
+                            if "_" in value or "-" in value:
+                                parts = value.split("_")
+                                atom_name = parts[0]
+                                residue_name, resnum = parts[1].split("-")
+                                residue_names[-1].append(residue_name)
+                                atom_names[-1].append(atom_name)
+                                residue_numbers[-1].append(int(resnum))
+                            else:
+                                residue_names[-1].append("XXX")
+                                atom_names[-1].append(value)
+                                residue_numbers[-1].append(1)
+
+                elif "pbc" in line:
+                    if pbc_found:
+                        raise RuntimeError("Multiple PBC definitions found in the topology file")
+                    pbc_found = True
+                    pbc = line.split()[1]
+                    print(f"Found PBC value: {pbc}")
+
+        if not box_found:
+            raise RuntimeError("No box found in the topology file")
+        if not molecule_found:
+            raise RuntimeError("No molecule found in the topology file")
+        if not pbc_found:
+            pbc = "unset"
+
+    except FileNotFoundError:
+        raise RuntimeError("Cannot find the indicated topology file")
+
+    # construct the molecules dictionary
+    molecules_dict = { k: {} for k in molecules }
+    for k in molecules:
+        molecules_dict[k]["atoms"] = atom_names[molecules.index(k)]
+        molecules_dict[k]["residue"] = residue_names[molecules.index(k)]
+        molecules_dict[k]["residue_index"] = residue_numbers[molecules.index(k)]
+        molecules_dict[k]["name"] = k
+
+    n_molecule_types = len(molecules)
+
+    return molecules_dict
 
 
 def write_mat(df, output_file):
@@ -57,8 +158,7 @@ def write_mat(df, output_file):
     ordered_columns = ["molecule_name_ai", "ai", "molecule_name_aj", "aj", "distance", "probability", "cutoff", "learned"]
     df = df[ordered_columns]
 
-    # Save the data as HDF5 with compression
-    df.to_hdf(output_file, key="data", mode="w", format="table", complib="blosc:lz4", complevel=9)
+    df.to_csv(output_file, index=False, sep=" ", header=False)
 
 
 def read_mat(name, protein_ref_indices, args, cumulative=False):
@@ -169,85 +269,6 @@ def run_mat_(arguments):
     df.to_csv(out_path, index=False)
 
     return out_path
-
-
-def read_topologies(mego_top, target_top, simple_topology=(False, False)):
-    """
-    Reads the input topologies using parmed. Ignores warnings to prevent printing
-    of GromacsWarnings regarding 1-4 interactions commonly seen when using
-    parmed in combination with multi-eGO topologies. In the case of the reference
-    topology, the last atom number is changed to 1 to prevent parmed from allocating
-    unnecessary memory.
-
-    Parameters
-    ----------
-    mego_top : str
-        Path to the multi-eGO topology obtained from gmx pdb2gmx with multi-ego-basic force fields
-    target_top : str
-        Path to the toplogy of the system on which the analysis is to be performed
-    """
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            topology_mego = pmd.load_file(mego_top)
-        except Exception as e:
-            print(f"ERROR {e} in read_topologies while reading {mego_top}")
-            exit(1)
-        try:
-            dirname, basename = os.path.split(target_top)
-            temp_ref = tempfile.NamedTemporaryFile(prefix=basename, dir=dirname)
-            temp_ref.write(open(target_top, "rb").read())
-            temp_ref.seek(0)
-            molecules_tag = False
-            with open(temp_ref.name, "r") as f:
-                lines = f.readlines()
-                lines = [x for x in lines if x.strip()]
-
-            for i, line in enumerate(lines):
-                if line.strip() == "" or line[0] == ";":
-                    continue
-                if line.strip() == "[ molecules ]":
-                    molecules_tag = True
-                    continue
-                if line.strip().startswith("["):
-                    molecules_tag = False
-                if molecules_tag and re.match(r"\s*.+\s+\d+", lines[i]):
-                    print(f"Changing molecule number in line {i} that is {lines[i].strip()} to 1")
-                    lines[i] = re.sub(r"(\s*.+\s+)(\d+)", r"\g<1>1", lines[i])
-
-            with open(temp_ref.name, "w") as f:
-                f.writelines(lines)
-            topology_ref = pmd.load_file(temp_ref.name)
-
-        except Exception as e:
-            print(f"ERROR {e} in read_topologies while reading {target_top}")
-            exit(2)
-
-    n_mol = len(list(topology_mego.molecules.keys()))
-    mol_names = list(topology_mego.molecules.keys())
-    mol_list = np.arange(1, n_mol + 1, 1)
-
-    return topology_mego, topology_ref, n_mol, mol_names, mol_list
-
-
-def map_if_exists(atom_name):
-    """
-    Maps an atom name to a multi-eGO atom name if possible
-
-    Parameters
-    ----------
-    atom_name : str
-        The atom name with which to attempt the mapping
-
-    Return
-    ------
-    atom_name : str
-        Mapped atom name. Equal to the input if mapping was not possible
-    """
-    if atom_name in type_definitions.from_ff_to_multiego.keys():
-        return type_definitions.from_ff_to_multiego[atom_name]
-    else:
-        return atom_name
 
 
 def get_col_params(values, weights):
@@ -380,34 +401,6 @@ def warning_cutoff_histo(cutoff, max_adaptive_cutoff):
     )
 
 
-def generate_c12_values(df, types, combinations, molecule_type):
-    """
-    TODO
-    ----
-    Change symmetric to be a variable
-    """
-    all_c12 = np.sqrt(df["c12"].to_numpy() * df["c12"].to_numpy()[:, np.newaxis])
-    c12_map = np.full(all_c12.shape, None)
-    resnums = df["resnum"].to_numpy()
-
-    if molecule_type == "protein":
-        for combination in combinations:
-            (name_1, name_2, factor, constant, shift) = combination
-            if factor is not None and constant is not None or factor == constant:
-                raise RuntimeError("constant and error should be defined and mutualy exclusive")
-            if factor:
-                operation = lambda x: factor * x
-            if constant:
-                operation = lambda _: constant
-            combined_map = (types[name_1] & types[name_2][:, np.newaxis]) & (resnums + shift == resnums[:, np.newaxis])
-            combined_map = combined_map | combined_map.T
-            c12_map = np.where(combined_map, operation(all_c12), c12_map)
-
-    c12_map = np.where(c12_map == None, all_c12, c12_map)
-
-    return c12_map
-
-
 def calculate_matrices(args):
     """
     Starts the main routine for calculating the intermat by:
@@ -422,36 +415,24 @@ def calculate_matrices(args):
     args : dict
         The command-line parsed parameters
     """
-    topology_mego, topology_ref, N_species, molecules_name, mol_list = read_topologies(args.mego_top, args.target_top)
-
-    chain_list = []
-    chains = [x for x in topology_mego.molecules]
-
-    for i in chains:
-        chain_list.append(
-            (
-                i,
-                len(topology_mego.molecules[i][0].atoms),
-                len(topology_mego.split()[list(topology_mego.molecules.keys()).index(i)][1]),
-            )
-        )
-
-    # number of molecules per species
-    N_mols = []
-    for chain in chain_list:
-        N_mols.append(chain[2])
-    N_mols = np.array(N_mols)
+    # topology_mego, topology_ref, N_species, molecules_name, mol_list = read_topologies(args.mego_top, args.target_top)
+    # topology_mego, topology_ref = read_topologies(args.mego_top, args.target_top)
+    topology_mego = read_simple_topology(args.mego_top)
+    topology_ref = read_simple_topology(args.target_top)
+    n_species = len(topology_mego.keys())
+    molecules_name = list(topology_mego.keys())
+    mol_list = np.arange(1, n_species + 1, 1)
 
     print(
         f"""
-    Topology contains {N_species} molecules species. Namely {molecules_name}.
+    Topology contains {n_species} molecules species. Namely {molecules_name}.
     Calculating intermat for all species\n\n
     """
     )
     for mol_i in mol_list:
         if args.intra:
             prefix = f"intra_mol_{mol_i}_{mol_i}"
-            main_routine(mol_i, mol_i, topology_mego, topology_ref, molecules_name, prefix)
+            main_routine(mol_i, mol_i, topology_mego, topology_ref, molecules_name, args.calvados_ff, prefix)
         # fmt: off
         for mol_j in mol_list[mol_i - 1:]:
             # fmt: on
@@ -461,228 +442,114 @@ def calculate_matrices(args):
                 continue
 
             prefix = f"inter_mol_{mol_i}_{mol_j}"
-            main_routine(mol_i, mol_j, topology_mego, topology_ref, molecules_name, prefix)
+            main_routine(mol_i, mol_j, topology_mego, topology_ref, molecules_name, args.calvados_ff, prefix)
 
 
-def main_routine(mol_i, mol_j, topology_mego, topology_ref, molecules_name, prefix):
-
-    df = pd.DataFrame()
-
-    topology_df_i = pd.DataFrame()
-    topology_df_j = pd.DataFrame()
-
+def main_routine(mol_i, mol_j, topology_mego, topology_ref, molecules_name, ff, prefix):
+    # TODO introduce assert check to see all molecule names are equal
+    df = pd.DataFrame(columns=COLUMNS)
     # define matrix type (intra o inter)
     mat_type = prefix.split("_")[0]
     print(
         f"\nCalculating {mat_type} between molecule {mol_i} and {mol_j}: {molecules_name[mol_i-1]} and {molecules_name[mol_j-1]}"
     )
-    if args.tar:
-        with tarfile.open(args.histo, "r:*") as tar:
-            target_list = [x.name for x in tar.getmembers() if prefix in x.name and x.name.endswith(".dat")]
-    else:
-        if args.noh5:
-            target_list = [x for x in os.listdir(args.histo) if prefix in x and x.endswith(".dat")]
-        else:
-            target_list = [x for x in os.listdir(args.histo) if prefix in x and x.endswith(".h5")]
+    target_list = [x for x in os.listdir(args.histo) if prefix in x and x.endswith(".dat")]
 
-    protein_mego_i = topology_mego.molecules[list(topology_mego.molecules.keys())[mol_i - 1]][0]
-    protein_mego_j = topology_mego.molecules[list(topology_mego.molecules.keys())[mol_j - 1]][0]
+    mol_name_i = molecules_name[mol_i - 1]
+    mol_name_j = molecules_name[mol_j - 1]
+    protein_ref_i = topology_ref[mol_name_i]
+    protein_ref_j = topology_ref[mol_name_j]
+    original_size_j = len(set(protein_ref_j['residue_index']))
 
-    protein_ref_i = topology_ref.molecules[list(topology_ref.molecules.keys())[mol_i - 1]][0]
-    protein_ref_j = topology_ref.molecules[list(topology_ref.molecules.keys())[mol_j - 1]][0]
+    residue_list_i, residue_index_i = zip(*list(dict.fromkeys(zip(protein_ref_i['residue'], protein_ref_i['residue_index']))))
+    residue_list_j, residue_index_j = zip(*list(dict.fromkeys(zip(protein_ref_j['residue'], protein_ref_j['residue_index']))))
+    residue_list_i = np.array(residue_list_i)
+    residue_list_j = np.array(residue_list_j)
+    residue_index_i = np.array(residue_index_i)
+    residue_index_j = np.array(residue_index_j)
 
-    original_size_j = len(protein_ref_j.atoms)
+    EPSILON = 0.8368 # kJ/mol
+    type_sigma_dict = {k: v for k, v in ff[['three', 'sigmas']].values}
+    # c6_dict = { k: 4 * EPSILON * v ** 6 for k, v in ff[['three', 'sigmas']].values }
+    # c12_dict = { k: 4 * EPSILON * v ** 12 for k, v  in ff[['three', 'sigmas']].values }
 
-    protein_ref_indices_i = np.array(
-        [
-            i + 1
-            for i in range(len(protein_ref_i.atoms))
-            if (protein_ref_i[i].element_name != "H" or protein_ref_i[i].name == args.bkbn_H)
-        ]
+    # Good-Hope combination rule
+    # calculate_cutoff = lambda x: np.argmin((np.cumsum(x[x > 0.0]) / np.sum(x[x > 0.0])) > 0.95)
+    # lj_map_gen = lambda c6, c12: lambda x: c12 / x ** 12 - c6 / x ** 6
+
+    combined_sigma = np.sqrt(
+        np.vectorize(type_sigma_dict.get)(residue_list_i) * np.vectorize(type_sigma_dict.get)(residue_list_j)[:, np.newaxis]
     )
-    protein_ref_indices_j = np.array(
-        [
-            i + 1
-            for i in range(len(protein_ref_j.atoms))
-            if (protein_ref_j[i].element_name != "H" or protein_ref_j[i].name == args.bkbn_H)
-        ]
-    )
+    combined_c6 = 4 * EPSILON * combined_sigma ** 6
+    combined_c12 = 4 * EPSILON * combined_sigma ** 12
+    # lj_map = lj_map_gen(combined_c6, combined_c12) # function of r with c6 and c12 in place
+    # r = np.linspace(0, args.cutoff, 100)
+    # lj_potentials = np.array([ lj_map(r_i) for r_i in r ])
+    # print(lj_potentials[0])
+    # cutoff = calculate_cutoff(lj_potentials)
 
-    protein_ref_i = [a for a in protein_ref_i.atoms if (a.element_name != "H" or a.name == args.bkbn_H)]
-    protein_ref_j = [a for a in protein_ref_j.atoms if (a.element_name != "H" or a.name == args.bkbn_H)]
+    r = np.linspace(0, args.cutoff, 100)
+    # SLOW VERSION
+    cutoff = np.zeros((len(residue_list_i), len(residue_list_j)))
+    for i in range(len(residue_list_i)):
+        for j in range(len(residue_list_j)):
+            c6, c12 = combined_c6[i, j], combined_c12[i, j]
+            lj = c12 / r ** 12 - c6 / r ** 6
+            attractive_mask = lj < 0
+            att_lj = np.where(attractive_mask, lj, 0)
+            att = np.where(attractive_mask, np.cumsum(att_lj), 0)
+            total_att = np.sum(att_lj)
+            idx = np.argwhere((att / total_att) > 0.95)
+            cutoff[i, j] = r[idx[0][0]]
+    # FAST VERSION
+    # cc6, cc12 = combined_c6[..., np.newaxis], combined_c12[..., np.newaxis]
+    # lj = cc12 / r[np.newaxis, np.newaxis, :] ** 12 - cc6 / r[np.newaxis, np.newaxis, :] ** 6
+    # attractive_mask = lj < 0
+    # att_lj = np.where(attractive_mask, lj, 0)
+    # att = np.where(attractive_mask, np.cumsum(att_lj, axis=2), 0)
+    # total_att = np.sum(att_lj, axis=2)
+    # print(total_att[..., np.newaxis].shape)
+    # idx = np.argwhere((att / total_att[..., np.newaxis]) > 0.95)
+    # # print(idx.shape)
+    # att_percent = att / total_att[..., np.newaxis]
+    # print(att_percent.shape)
+    # idx = att_percent > 0.95
+    # a = np.argwhere(idx)
+    # print(a.shape)
+    # # print(idx)
+    # # print(f"idx {list(idx)}")
+    # cutoff = r[idx[:, 0], idx[:, 1], idx[:, 2]]
 
-    sorter_i = [str(x.residue.number) + map_if_exists(x.name) for x in protein_ref_i]
-    sorter_mego_i = [str(x.residue.number) + x.name for x in protein_mego_i]
-
-    sorter_j = [str(x.residue.number) + map_if_exists(x.name) for x in protein_ref_j]
-    sorter_mego_j = [str(x.residue.number) + x.name for x in protein_mego_j]
-
-    # preparing topology of molecule i
-    topology_df_i["ref_ai"] = protein_ref_indices_i
-    topology_df_i["ref_type"] = [a.name for a in protein_ref_i]
-    topology_df_i["resname"] = [a.residue.name for a in protein_ref_i]
-    topology_df_i["resnum"] = [a.residue.idx for a in protein_ref_i]
-    topology_df_i["sorter"] = sorter_i
-    topology_df_i["ref_ri"] = topology_df_i["sorter"].str.replace("[a-zA-Z]+[0-9]*", "", regex=True).astype(int)
-    topology_df_i.sort_values(by="sorter", inplace=True)
-    topology_df_i["mego_ai"] = [a[0].idx for a in sorted(zip(protein_mego_i, sorter_mego_i), key=lambda x: x[1])]
-    topology_df_i["mego_type"] = [a[0].type for a in sorted(zip(protein_mego_i, sorter_mego_i), key=lambda x: x[1])]
-    topology_df_i["mego_name"] = [a[0].name for a in sorted(zip(protein_mego_i, sorter_mego_i), key=lambda x: x[1])]
-    topology_df_i["name"] = topology_df_i["mego_name"]
-    topology_df_i["type"] = topology_df_i["mego_type"]
-    # need to sort back otherwise c12_cutoff are all wrong
-    topology_df_i.sort_values(by="ref_ai", inplace=True)
-    if args.custom_c12 is not None:
-        custom_c12_dict = io.read_custom_c12_parameters(args.custom_c12)
-        d_appo = {key: val for key, val in zip(custom_c12_dict.name, custom_c12_dict.rc_c12)}
-        d.update(d_appo)
-
-    topology_df_i["c12"] = topology_df_i["mego_type"].map(d)
-
-    # preparing topology of molecule j
-    topology_df_j["ref_ai"] = protein_ref_indices_j
-    topology_df_j["ref_type"] = [a.name for a in protein_ref_j]
-    topology_df_j["sorter"] = sorter_j
-    topology_df_j["resname"] = [a.residue.name for a in protein_ref_j]
-    topology_df_j["resnum"] = [a.residue.idx for a in protein_ref_j]
-    topology_df_j["ref_ri"] = topology_df_j["sorter"].str.replace("[a-zA-Z]+[0-9]*", "", regex=True).astype(int)
-    topology_df_j.sort_values(by="sorter", inplace=True)
-    topology_df_j["mego_type"] = [a[0].type for a in sorted(zip(protein_mego_j, sorter_mego_j), key=lambda x: x[1])]
-    topology_df_j["mego_name"] = [a[0].name for a in sorted(zip(protein_mego_j, sorter_mego_j), key=lambda x: x[1])]
-    topology_df_j["name"] = topology_df_j["mego_name"]
-    topology_df_j["type"] = topology_df_j["mego_type"]
-    # need to sort back otherwise c12_cutoff are all wrong
-    topology_df_j.sort_values(by="ref_ai", inplace=True)
-    if args.custom_c12 is not None:
-        custom_c12_dict = io.read_custom_c12_parameters(args.custom_c12)
-        d_appo = {key: val for key, val in zip(custom_c12_dict.name, custom_c12_dict.rc_c12)}
-        d.update(d_appo)
-
-    topology_df_j["c12"] = topology_df_j["mego_type"].map(d)
-    oxygen_mask = masking.create_matrix_mask(
-        topology_df_i["mego_type"].to_numpy(),
-        topology_df_j["mego_type"].to_numpy(),
-        [("OM", "OM"), ("O", "O"), ("OM", "O")],
-        symmetrize=True,
-    )
-
-    if mat_type == "intra":
-        first_aminoacid = topology_mego.residues[0].name
-        if first_aminoacid in type_definitions.aminoacids_list:
-            molecule_type = "protein"
-        elif first_aminoacid in type_definitions.nucleic_acid_list:
-            molecule_type = "nucleic_acid"
-        else:
-            molecule_type = "other"
-
-        types = type_definitions.lj14_generator(topology_df_i)
-
-        if molecule_type == "other":
-            # read user pairs
-            molecule_keys = list(topology_mego.molecules.keys())
-            user_pairs = [
-                (pair.atom1.idx, pair.atom2.idx, pair.type.epsilon * 4.184)
-                for pair in topology_mego.molecules[molecule_keys[mol_i - 1]][0].adjusts
-            ]
-            user_pairs = [
-                (
-                    topology_df_i[topology_df_i["mego_ai"] == ai].index[0],
-                    topology_df_i[topology_df_i["mego_ai"] == aj].index[0],
-                    c12,
-                )
-                for ai, aj, c12 in user_pairs
-            ]
-
-        c12_values = generate_c12_values(topology_df_i, types, type_definitions.atom_type_combinations, molecule_type)
-
-        # define all cutoff
-        c12_cutoff = CUTOFF_FACTOR * np.power(np.where(oxygen_mask, 3e-6, c12_values), 1.0 / 12.0)
-
-        # apply the user pairs (overwrite all other rules)
-        if molecule_type == "other":
-            for ai, aj, c12 in user_pairs:
-                ai = int(ai)
-                aj = int(aj)
-                if c12 > 0.0:
-                    c12_cutoff[ai][aj] = CUTOFF_FACTOR * np.power(c12, 1.0 / 12.0)
-                    c12_cutoff[aj][ai] = CUTOFF_FACTOR * np.power(c12, 1.0 / 12.0)
-
-    if mat_type == "inter":
-        # define all cutoff
-        c12_cutoff = CUTOFF_FACTOR * np.where(
-            oxygen_mask,
-            np.power(3e-6, 1.0 / 12.0),
-            np.power(
-                np.sqrt(topology_df_j["c12"].values * topology_df_i["c12"].values[:, np.newaxis]),
-                1.0 / 12.0,
-            ),
-        )
-
-    mismatched = topology_df_i.loc[topology_df_i["ref_type"].str[0] != topology_df_i["mego_name"].str[0]]
-    if not mismatched.empty:
-        raise ValueError(f"Mismatch found:\n{mismatched}, target and mego topology are not compatible")
-    mismatched = topology_df_j.loc[topology_df_j["ref_type"].str[0] != topology_df_j["mego_name"].str[0]]
-    if not mismatched.empty:
-        raise ValueError(f"Mismatch found:\n{mismatched}, target and mego topology are not compatible")
-
-    if np.any(c12_cutoff > args.cutoff):
-        warning_cutoff_histo(args.cutoff, np.max(c12_cutoff))
-    if np.isnan(c12_cutoff.astype(float)).any():
-        warning_cutoff_histo(args.cutoff, np.max(c12_cutoff))
-
-    # create dictionary with ref_ai to ri
-    ref_ai_to_ri_i = dict(zip(topology_df_i["ref_ai"], topology_df_i["ref_ri"]))
-    ref_ai_to_ri_j = dict(zip(topology_df_j["ref_ai"], topology_df_j["ref_ri"]))
-    # create a dictionary with ref_ri to ai as a list of ai
-    ref_ri_to_ai_i = {f"{mol_i}_{ri}": [] for ri in topology_df_i["ref_ri"]}
-    ref_ri_to_ai_j = {f"{mol_j}_{ri}": [] for ri in topology_df_j["ref_ri"]}
-    for ai, ri in ref_ai_to_ri_i.items():
-        ref_ri_to_ai_i[f"{mol_i}_{ri}"].append(ai)
-    for ai, ri in ref_ai_to_ri_j.items():
-        ref_ri_to_ai_j[f"{mol_j}_{ri}"].append(ai)
-
-    dict_m_m_r = {}
-    for target in target_list:
-        if args.noh5 or args.tar:
-            target_fields = target.replace(".dat", "").split("_")
-        else:
-            target_fields = target.replace(".h5", "").split("_")
-        mi = int(target_fields[-4])
-        mj = int(target_fields[-3])
-        ai = int(target_fields[-1])
-        if ai not in protein_ref_indices_i:
-            continue
-        ri = ref_ai_to_ri_i[ai]
-        if (mi, mj, ri) in dict_m_m_r:
-            dict_m_m_r[(mi, mj, ri)].append(target)
-        else:
-            dict_m_m_r[(mi, mj, ri)] = [target]
-
-    ########################
-    # PARALLEL PROCESS START
-    ########################
+    if np.any(cutoff > args.cutoff):
+        warning_cutoff_histo(args.cutoff, np.max(cutoff))
+    if np.isnan(cutoff.astype(float)).any():
+        warning_cutoff_histo(args.cutoff, np.max(cutoff))
 
     if args.zero:
         df = pd.DataFrame()
-        df["ai"] = np.repeat(protein_ref_indices_i, len(protein_ref_indices_j))
-        df["mi"] = [mol_i for _ in range(len(protein_ref_indices_i) * len(protein_ref_indices_j))]
-        df["aj"] = np.tile(protein_ref_indices_j, len(protein_ref_indices_i))
-        df["mj"] = [mol_j for _ in range(len(protein_ref_indices_i) * len(protein_ref_indices_j))]
+        df["ai"] = np.repeat(len(residue_list_i), len(residue_list_j))
+        df["mi"] = [mol_i for _ in range(len(residue_list_i) * len(residue_list_j))]
+        df["aj"] = np.tile(len(residue_list_j), len(residue_list_i))
+        df["mj"] = [mol_j for _ in range(len(residue_list_i) * len(residue_list_j))]
         df["c12dist"] = 0.0
         df["p"] = 0.0
-        df["cutoff"] = [c12_cutoff[i, j] for i in range(len(protein_ref_indices_i)) for j in range(len(protein_ref_indices_j))]
+        df["cutoff"] = cutoff.flatten()
     else:
         chunks = np.array_split(target_list, args.num_threads)
+        ##########################
+        # PARALLEL PROCESS START #
+        ##########################
+
         pool = multiprocessing.Pool(args.num_threads)
         results = pool.map(
             run_mat_,
             [
                 (
                     args,
-                    protein_ref_indices_i,
-                    protein_ref_indices_j,
+                    residue_index_i,
+                    residue_index_j,
                     original_size_j,
-                    c12_cutoff,
+                    cutoff,
                     mol_i,
                     mol_j,
                     x,
@@ -695,7 +562,7 @@ def main_routine(mol_i, mol_j, topology_mego, topology_ref, molecules_name, pref
         pool.join()
 
         ########################
-        # PARALLEL PROCESS END
+        # PARALLEL PROCESS END #
         ########################
 
         # concatenate and remove partial dataframes
@@ -721,7 +588,7 @@ def main_routine(mol_i, mol_j, topology_mego, topology_ref, molecules_name, pref
 
     df.index = range(len(df.index))
     out_name = args.out_name + "_" if args.out_name else ""
-    output_file = f"{args.out}/{mat_type}mat_{out_name}{mol_i}_{mol_j}.ndx.h5"
+    output_file = f"{args.out}/{mat_type}mat_{out_name}{mol_i}_{mol_j}.ndx"
     print(f"Saving output for molecule {mol_i} and {mol_j} in {output_file}")
     write_mat(df, output_file)
 
@@ -735,15 +602,15 @@ if __name__ == "__main__":
         help='Path to the directory containing the histograms. The histogram files should contain the prefix "intra_" for intra molecular contact descriptions and "inter_" for  inter molecular.',
     )
     parser.add_argument(
-        "--target_top",
+        "--top",
         required=True,
-        help="Path to the topology file of the system on which the histograms were calculated on",
+        help="Path to the topology file of the system",
     )
-    parser.add_argument(
-        "--mego_top",
-        required=True,
-        help="""Path to the standard multi-eGO topology of the system generated by pdb2gmx""",
-    )
+    # parser.add_argument(
+    #     "--mego_top",
+    #     required=True,
+    #     help="""Path to the standard multi-eGO topology of the system generated by pdb2gmx""",
+    # )
     parser.add_argument(
         "--mode", help="Sets the caculation to be intra/same/cross for histograms processing", default="intra+same+cross"
     )
@@ -771,11 +638,6 @@ if __name__ == "__main__":
         help="Read from tar file instead of directory",
     )
     parser.add_argument(
-        "--noh5",
-        action="store_true",
-        help="Read from text file instead of hdf5",
-    )
-    parser.add_argument(
         "--custom_c12",
         type=str,
         help="Custom dictionary of c12 for special molecules",
@@ -784,6 +646,12 @@ if __name__ == "__main__":
         "--zero",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--calvados_ff",
+        type=str,
+        help="Force field to be used for calculations",
+        required=True,
     )
     args = parser.parse_args()
 
@@ -807,6 +675,8 @@ if __name__ == "__main__":
         if not tarfile.is_tarfile(args.histo):
             print(f"The path '{args.histo}' is not a tar file.")
             sys.exit()
+
+    args.calvados_ff = pd.read_csv(args.calvados_ff, sep=",")
 
     # Sets mode
     modes = np.array(args.mode.split("+"), dtype=str)
