@@ -208,3 +208,115 @@ def init_charge_nonpolar_interactions(eps,rc):
     cn.setForceGroup(1)
     return cn
 
+def genMegoParams(md_mat, rc_mat, epsilon_0, sigmas, stickyness, epsilon_calvados):
+    """ Generate parameters for the multi-eGO potential. 
+    Creates the force field as in https://github.com/frantropy/multi-eGO/blob/419f1ad7418eb7099bf2231b9459e7271ddfc57d/src/multiego/ensemble.py#L904 """
+
+    print('Generating multi-eGO parameters...')
+
+    md_threshold = 0.05 # TODO implement
+    epsilon_min = 0.07
+
+    combined_sigmas = np.sqrt(sigmas * sigmas[:, np.newaxis]).flatten()
+
+    r_min = 2 ** ( 1 / 6 ) * combined_sigmas
+    lj_min = 4 * epsilon_calvados * ( ( combined_sigmas / r_min ) ** 12 - ( combined_sigmas / r_min ) ** 6 )
+    combined_lambdas = 0.5 * (stickyness + stickyness[:, np.newaxis]).flatten()
+    epsilon_prior = lj_min - combined_lambdas * lj_min - epsilon_calvados * ( 1 - combined_lambdas )
+
+    rc_threshold = md_threshold ** ( (epsilon_0 - epsilon_prior) / (epsilon_0 - epsilon_min) )
+    limit_rc_att = rc_threshold ** ( (epsilon_prior - epsilon_min) / (epsilon_0 - epsilon_prior) )
+
+    pdmat = md_mat[:, 3]
+    pdmat_rc = rc_mat[:, 3]
+    distance = md_mat[:, 4]
+    rc_distance = rc_mat[:, 4]
+
+    rep = 4 * epsilon_prior * combined_sigmas ** 12 # should be c12s
+
+    mask = pdmat <= md_threshold
+    distance = np.where(
+        epsilon_prior < 0,
+        combined_sigmas * 2.0 ** (1.0 / 6.0) / (epsilon_0 ** (1.0 / 12.0)),
+        combined_sigmas * 2.0 ** (1.0 / 6.0)
+    )
+
+    mask_2 = pdmat_rc <= md_threshold
+    rc_distance = np.where(
+        epsilon_prior < 0,
+        combined_sigmas * 2.0 ** (1.0 / 6.0) / (epsilon_0 ** (1.0 / 12.0)),
+        combined_sigmas * 2.0 ** (1.0 / 6.0)
+    )
+
+    # is this ever the case?
+    epsilon = np.where(epsilon_prior < 0, - rep * (distance / rc_distance) ** 12, 0.0)
+
+    # Attractive interactions
+    epsilon = np.where(
+        (pdmat > limit_rc_att * np.maximum(pdmat_rc, rc_threshold)) & (pdmat > md_threshold),
+        np.maximum(0.0, epsilon_prior) - (epsilon_0 - np.maximum(0.0, epsilon_prior)) / np.log(rc_threshold) * np.log(pdmat / (np.maximum(pdmat_rc, rc_threshold))),
+        epsilon
+    )
+
+    epsilon = np.where(
+        (pdmat > limit_rc_att * np.maximum(pdmat_rc, rc_threshold)) & (pdmat < md_threshold),
+        np.maximum(0.0, (distance ** 12) * ((epsilon_0 - np.maximum(0.0, epsilon_prior)) / (np.log(rc_threshold))) * np.log(pdmat / (np.maximum(pdmat_rc, rc_threshold)))) - rep * (distance / rc_distance) ** 12,
+        epsilon
+    )
+    # clean NaNs
+    # meGO_LJ.dropna(subset=["epsilon"], inplace=True)
+    # meGO_LJ = meGO_LJ[meGO_LJ.epsilon != 0]
+
+    # lower value for repulsion
+    epsilon = np.where((epsilon < 0.0) & (-epsilon < 0.02 * rep), -0.02 * rep, epsilon)
+    # higher value for repulsion
+    epsilon = np.where((epsilon < 0.0) & (-epsilon > 2.0 * rep), -2.0 * rep, epsilon)
+    # but within a lower
+    epsilon = np.where((epsilon < 0.0) & (-epsilon < 0.2 * rep), -0.2 * rep, epsilon)
+    # and an upper value
+    epsilon = np.where((epsilon < 0.0) & (-epsilon > 2.0 * rep), -2.0 * rep, epsilon)
+
+    mego_sigma = distance / 2 ** (1.0 / 6.0)
+    # sigma boundaries for attractive interactions
+    mego_sigma = np.where(
+        (epsilon > 0.0) & (mego_sigma < 0.7 * combined_sigmas),
+        0.7 * combined_sigmas,
+        mego_sigma
+    )
+    mego_sigma = np.where(
+        (epsilon > 0.0) & (mego_sigma > 1.3 * combined_sigmas),
+        1.3 * combined_sigmas,
+        mego_sigma
+    )
+    mego_sigma = np.where(epsilon < 0.0, - epsilon ** (1.0 / 12.0), mego_sigma)
+
+    # Calculate c6 and c12 for 
+    c6 = np.where(epsilon < 0.0, 0.0, 4 * epsilon * (mego_sigma ** 6))
+    c12 = np.where(epsilon < 0.0, -epsilon, 4 * epsilon * (mego_sigma ** 12))
+
+    return c6, c12, mego_sigma
+
+def init_mego_interactions(mego_c6, mego_c12, fixed_lambda, s, rc):
+    """ Define a multi-eGO interaction. """
+    mego_c6 = mego_c6.reshape((int(np.sqrt(len(mego_c6))), int(np.sqrt(len(mego_c6)))))
+    mego_c12 = mego_c12.reshape((int(np.sqrt(len(mego_c12))), int(np.sqrt(len(mego_c12)))))
+
+    energy_expressions = []
+    energy_expression = lambda c6, c12, s: f'select(step(r-2^(1/6)*{s}),l*(({c12}/r^12-{c6}/r^6)-shift),(({c12}/r^12-{c6}/r^6)-l*shift)+(1-l));shift=({s}/{rc})^12-({s}/{rc})^6; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda})'
+
+    for ai in range(len(mego_c6)):
+        for aj in range(len(mego_c6)):
+            sig = 0.5 * (s[ai] + s[aj])
+            print(mego_c6)
+            c6 = mego_c6[ai][aj]
+            c12 = mego_c12[ai][aj]
+            mego = openmm.CustomNonbondedForce(energy_expression(c6, c12, sig))
+            mego.addPerParticleParameter('l')
+            mego.addPerParticleParameter('id')
+            mego.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
+            mego.setCutoffDistance(rc*unit.nanometer)
+            mego.setForceGroup(0)
+
+            energy_expressions.append(mego)
+
+    return energy_expressions

@@ -26,6 +26,8 @@ int main(int argc, const char** argv)
   int *p_simple_topology = NULL;
   bool nopbc = false;
   bool simple_topology = false;
+  bool force_box = false;
+  int *p_force_box = NULL;
 
   // make popt options
   struct poptOption optionsTable[] = {
@@ -46,6 +48,7 @@ int main(int argc, const char** argv)
     {"weights",     '\0', POPT_ARG_STRING | POPT_ARGFLAG_OPTIONAL,  &p_weights_path,    0, "Weights file",                "FILE"},
     {"no_pbc",      '\0', POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &p_nopbc,           0, "Ignore pbcs",                 0},
     {"simple_top",  '\0', POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &p_simple_topology, 0, "Use simple topology",         0},
+    {"force_box",  '\0',  POPT_ARG_NONE | POPT_ARGFLAG_OPTIONAL,    &p_force_box,       0, "Force box",                   0},
     POPT_TABLEEND
   };
 
@@ -72,6 +75,11 @@ int main(int argc, const char** argv)
   mode = p_mode ? std::string(p_mode) : std::string("intra+same+cross");
   if ( p_weights_path != NULL ) weights_path = std::string(p_weights_path);
   if ( p_out_prefix != NULL ) out_prefix = std::string(p_out_prefix);
+  if ( p_force_box != NULL )
+  {
+    std::cout << "Forcing box!" << std::endl;
+    force_box = true;
+  }
   if ( p_nopbc != NULL )
   {
     std::cout << "Ignoring periodic boundary conditions!" << std::endl;
@@ -167,7 +175,7 @@ int main(int argc, const char** argv)
 
   resdata::RESData resdata(
     top_path, traj_path, cutoff, mol_cutoff, nskip, num_threads, mol_threads, dt,
-    mode, weights_path, nopbc, t_begin, t_end, index_path, simple_topology
+    mode, weights_path, nopbc, t_begin, t_end, index_path, simple_topology, force_box
   );
   resdata.run();
   resdata.process_data();

@@ -156,7 +156,7 @@ def write_mat(df, output_file):
     df["learned"] = True
 
     # Force the column order
-    ordered_columns = ["molecule_name_ai", "ai", "molecule_name_aj", "aj", "distance", "probability", "cutoff", "learned"]
+    ordered_columns = ["molecule_name_ai", "ai", "molecule_name_aj", "aj", "distance", "probability", "cutoff"]#, "learned"]
     df = df[ordered_columns]
 
     df.to_csv(output_file, index=False, sep=" ", header=False)

@@ -197,6 +197,15 @@ class Sim:
                 self.add_mdtraj_topol(comp)
                 self.add_particles_system(comp.mws)
 
+                if self.mego:
+                    print("Generating mego parameters")
+                    self.mego_mat_md, self.mego_mat_prior = np.loadtxt(self.mego_md_path), np.loadtxt(self.mego_prior_path)
+                    self.mego_c6, self.mego_c12, self.mego_sigma = interactions.genMegoParams(
+                        self.mego_mat_md, self.mego_mat_prior, self.mego_epsilon, comp.sigmas, comp.lambdas, self.eps_lj)
+                    self.mego_lj = interactions.init_mego_interactions(
+                        self.mego_c6, self.mego_c12, self.fixed_lambda, self.mego_sigma, self.cutoff_yu
+                    )
+
                 # add interactions + restraints
                 if comp.molecule_type in ['protein','crowder','cyclic','seastar','ptm_protein']:
                     xs = self.place_molecule(comp)
@@ -226,8 +235,15 @@ class Sim:
         """ Add forces to system. """
 
         # Intermolecular forces
-        for force in [self.yu, self.ah]:
-            self.system.addForce(force)
+        if not self.mego:
+            self.system.addForce(self.ah)
+        self.system.addForce(self.yu)
+
+        # Multi-eGO force
+        if self.mego:
+            for force in self.mego_lj:
+                self.system.addForce(force) 
+            print(f'Number of eGO forces: {len(self.mego_lj)}')
 
         if (self.nlipids > 0) or (self.ncookelipids > 0):
             for force in [self.cos, self.cn]:
@@ -371,6 +387,9 @@ class Sim:
         for excl in exclusion_map:
             self.ah = interactions.add_exclusion(self.ah, excl[0], excl[1])
             self.yu = interactions.add_exclusion(self.yu, excl[0], excl[1])
+            if self.mego:
+                for mego_i in range(len(self.mego_lj)):
+                    self.mego_lj[mego_i] = interactions.add_exclusion(self.mego_lj[mego_i], excl[0], excl[1])
             if self.nlipids > 0 or self.ncookelipids > 0:
                 self.cos.addExclusion(excl[0], excl[1])
                 self.cn.addExclusion(excl[0], excl[1])
@@ -395,6 +414,10 @@ class Sim:
                     self.cos.addParticle([sig*unit.nanometer, lam, 0])
                 else:
                     self.cos.addParticle([sig*unit.nanometer, lam, 1])
+            if self.mego:
+                for mego_i in range(len(self.mego_lj)):
+                    # TODO make more efficient by only adding the right particles ?
+                    self.mego_lj[mego_i].addParticle([lam, 1])
         # Add Debye-Huckel
         for q in comp.qs:
             self.yu.addParticle([q])

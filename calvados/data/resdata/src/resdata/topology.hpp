@@ -21,6 +21,8 @@
  * NOTES
  * doing decltype(x) & allows for const ref access without copying the data -> should be faster https://stackoverflow.com/a/5424111
  * would be nice to implement ^ where necessary
+ * TODO:
+ *  - remove all the mol_id bools as it is ugly and bad
  */
 
 namespace resdata::topology

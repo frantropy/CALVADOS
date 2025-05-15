@@ -23,9 +23,8 @@ public:
   // create default constructor
   Frame() { x = (rvec*)malloc(0 * sizeof(rvec)); }
   Frame(int natom) : natom(natom) { x = (rvec*)malloc(natom * sizeof(rvec)); }
-  // ~Frame() { free(x); free(offsets); }
 
-  int read_next_frame(XDRFILE *xd, bool nopbc, PbcType pbc_type, t_pbc *pbc)
+  int read_next_frame(XDRFILE *xd, bool nopbc, PbcType pbc_type, t_pbc *pbc, bool force_box)
   {
     int status = read_xtc(xd, natom, &step, &time, box, x, &prec);
     if (nopbc)
@@ -34,7 +33,8 @@ public:
     }
     else
     {
-      set_pbc(pbc, pbc_type, box);
+      if (force_box) set_pbc(pbc, pbc_type, pbc->box);
+      else set_pbc(pbc, pbc_type, box);
     }
     return status;    
   }

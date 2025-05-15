@@ -106,6 +106,8 @@ namespace resdata
     std::string mode_;
     bool intra_ = false, same_ = false, cross_ = false;
 
+    bool force_box_;
+
     static void molecule_routine(
         const int i, const resdata::topology::Topology &top, rvec *xcm,
         float mcut2, float cut_sig_2,
@@ -230,9 +232,10 @@ namespace resdata
         const std::string &top_path, const std::string &traj_path,
         float cutoff, float mol_cutoff, int nskip, int num_threads, int num_mol_threads,
         int dt, const std::string &mode, const std::string &weights_path,
-        bool no_pbc, float t_begin, float t_end, const std::string &index_path, bool simple_topology) : cutoff_(cutoff), mol_cutoff_(mol_cutoff), nskip_(nskip), num_threads_(num_threads), num_mol_threads_(num_mol_threads),
-                                                                                                        mode_(mode), weights_path_(weights_path), simple_topology_(simple_topology), index_path_(index_path),
-                                                                                                        no_pbc_(no_pbc), dt_(dt), t_begin_(t_begin), t_end_(t_end), top_path_(top_path), trj_path_(traj_path)
+        bool no_pbc, float t_begin, float t_end, const std::string &index_path, bool simple_topology, 
+        bool force_box ) : cutoff_(cutoff), mol_cutoff_(mol_cutoff), nskip_(nskip), num_threads_(num_threads), num_mol_threads_(num_mol_threads),
+                           mode_(mode), weights_path_(weights_path), simple_topology_(simple_topology), index_path_(index_path), no_pbc_(no_pbc), 
+                           dt_(dt), t_begin_(t_begin), t_end_(t_end), top_path_(top_path), trj_path_(traj_path), force_box_(force_box)
     {
       mcut2_ = mol_cutoff_ * mol_cutoff_;
       cut_sig_2_ = (cutoff_ + 0.02) * (cutoff_ + 0.02);
@@ -705,7 +708,14 @@ namespace resdata
       const std::vector<int> n_moltypes = top_.get_unique_molecules();
       const std::vector<std::vector<int>> cross_index = top_.get_cross_index();
 
-      while (frame_->read_next_frame(trj_, no_pbc_, top_.get_pbc_type(), top_.get_pbc()) == exdrOK)
+
+      std::cout << " BOX \n";
+      for ( int i = 0; i < 9; i++)
+      {
+        std::cout << top_.get_box()[i] << " ";
+      }
+      std::cout << std::endl;
+      while (frame_->read_next_frame(trj_, no_pbc_, top_.get_pbc_type(), top_.get_pbc(), force_box_) == exdrOK)
       {
         new_progress = static_cast<float>(frnr) / static_cast<float>(frame_->nframe);
         if (new_progress - progress > 0.01)
