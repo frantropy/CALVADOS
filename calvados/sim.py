@@ -241,8 +241,8 @@ class Sim:
 
         # Multi-eGO force
         if self.mego:
-            for force in self.mego_lj:
-                self.system.addForce(force) 
+            for mego_lj in self.mego_lj:
+                self.system.addForce(mego_lj)
             print(f'Number of eGO forces: {len(self.mego_lj)}')
 
         if (self.nlipids > 0) or (self.ncookelipids > 0):
@@ -402,7 +402,7 @@ class Sim:
         offset = self.nparticles - comp.nbeads # to get indices of current comp in context of system
 
         # Add Ashbaugh-Hatch
-        for sig, lam in zip(comp.sigmas, comp.lambdas):
+        for i, (sig, lam) in enumerate(zip(comp.sigmas, comp.lambdas)):
             if comp.molecule_type in ['lipid', 'cooke_lipid']:
                 self.ah.addParticle([sig*unit.nanometer, lam, 0])
             elif comp.molecule_type == 'crowder':
@@ -416,8 +416,7 @@ class Sim:
                     self.cos.addParticle([sig*unit.nanometer, lam, 1])
             if self.mego:
                 for mego_i in range(len(self.mego_lj)):
-                    # TODO make more efficient by only adding the right particles ?
-                    self.mego_lj[mego_i].addParticle([lam, 1])
+                        self.mego_lj[mego_i].addParticle([lam, 1, i])
         # Add Debye-Huckel
         for q in comp.qs:
             self.yu.addParticle([q])
@@ -667,7 +666,9 @@ def run(path='.',fconfig='config.yaml',fcomponents='components.yaml'):
     with open(f'{path}/{fcomponents}','r') as stream:
         components = safe_load(stream)
 
+    print("creating sim")
     mysim = Sim(path,config,components)
+    print("building system")
     mysim.build_system()
     mysim.simulate()
     return mysim

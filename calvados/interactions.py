@@ -302,7 +302,29 @@ def init_mego_interactions(mego_c6, mego_c12, fixed_lambda, s, rc):
     mego_c12 = mego_c12.reshape((int(np.sqrt(len(mego_c12))), int(np.sqrt(len(mego_c12)))))
 
     energy_expressions = []
-    energy_expression = lambda c6, c12, s: f'select(step(r-2^(1/6)*{s}),l*(({c12}/r^12-{c6}/r^6)-shift),(({c12}/r^12-{c6}/r^6)-l*shift)+(1-l));shift=({s}/{rc})^12-({s}/{rc})^6; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda})'
+    energy_expression = lambda c6, c12, s, pid1, pid2: f'select(step(abs(id1-{pid1})+abs(id2-{pid2}),0,select(step(r-2^(1/6)*{s}),l*(({c12}/r^12-{c6}/r^6)-shift),(({c12}/r^12-{c6}/r^6)-l*shift)+(1-l));shift=({s}/{rc})^12-({s}/{rc})^6; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda}))'
+
+    energy_expression = lambda c6, c12, s, pid1, pid2: f'select(step(abs(id1-{pid1})+abs(id2-{pid2})),select(step(r-2^(1/6)*{s}),l*(({c12}/r^12-{c6}/r^6)-shift),(({c12}/r^12-{c6}/r^6)-l*shift)+(1-l));shift=({s}/{rc})^12-({s}/{rc})^6; l=select(id1+id2,(id1*id2)*0.5*(l1+l2),{fixed_lambda})),0)'
+
+    energy_expression = lambda c6, c12, s, pid1, pid2: (
+        f'select('
+            f'step('
+                f'abs(id1-{pid1})+abs(id2-{pid2})'
+            f'),'
+            f'select('
+                f'step(r-2^(1/6)*{s}),'
+                f'l*(({c12}/r^12-{c6}/r^6)-shift),'
+                f'(({c12}/r^12-{c6}/r^6)-l*shift)+(1-l)'
+            f'),'
+            f'0'
+        f')'
+        f';shift=({s}/{rc})^12-({s}/{rc})^6;'
+        f'l=select('
+            f'id1+id2,'
+            f'(id1*id2)*0.5*(l1+l2),'
+            f'{fixed_lambda}'
+        f')'
+    )
 
     for ai in range(len(mego_c6)):
         for aj in range(len(mego_c6)):
@@ -310,9 +332,10 @@ def init_mego_interactions(mego_c6, mego_c12, fixed_lambda, s, rc):
             print(mego_c6)
             c6 = mego_c6[ai][aj]
             c12 = mego_c12[ai][aj]
-            mego = openmm.CustomNonbondedForce(energy_expression(c6, c12, sig))
+            mego = openmm.CustomNonbondedForce(energy_expression(c6, c12, sig, ai, aj))
             mego.addPerParticleParameter('l')
             mego.addPerParticleParameter('id')
+            mego.addPerParticleParameter('pid')
             mego.setNonbondedMethod(openmm.CustomNonbondedForce.CutoffPeriodic)
             mego.setCutoffDistance(rc*unit.nanometer)
             mego.setForceGroup(0)

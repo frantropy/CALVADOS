@@ -13,12 +13,14 @@ import json
 class Config:
     def __init__(self,**params):
         self.params = params
+        print(self.params)
         self.pkg_base = resources.files('calvados')
         self.config = self.load_default_config(self.pkg_base)
         self.load_config()
 
     def load_config(self):
         for key, val in self.params.items():
+            print(key, val)
             self.config[key] = val
 
     def write(self,path,name='config.yaml',analyses=''):
