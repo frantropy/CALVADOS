@@ -220,7 +220,9 @@ def genMegoParams(md_mat, rc_mat, epsilon_0, sigmas, stickyness, epsilon_calvado
     combined_sigmas = np.sqrt(sigmas * sigmas[:, np.newaxis]).flatten()
 
     r_min = 2 ** ( 1 / 6 ) * combined_sigmas
-    lj_min = 4 * epsilon_calvados * ( ( combined_sigmas / r_min ) ** 12 - ( combined_sigmas / r_min ) ** 6 )
+    lj_min = 4 * epsilon_calvados * ( ( combined_sigmas / r_min ) ** 12 - ( combined_sigmas / r_min ) ** 6 ) \
+             - combined_lambdas * ( 4 * epsilon_calvados * ( ( combined_sigmas / r_min ) ** 12 - ( combined_sigmas / r_min ) ** 6 ) ) \
+             - epsilon_calvados * ( 1 - combined_lambdas )
     combined_lambdas = 0.5 * (stickyness + stickyness[:, np.newaxis]).flatten()
     epsilon_prior = lj_min - combined_lambdas * lj_min - epsilon_calvados * ( 1 - combined_lambdas )
 
