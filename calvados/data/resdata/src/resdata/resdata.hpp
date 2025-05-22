@@ -709,12 +709,6 @@ namespace resdata
       const std::vector<std::vector<int>> cross_index = top_.get_cross_index();
 
 
-      std::cout << " BOX \n";
-      for ( int i = 0; i < 9; i++)
-      {
-        std::cout << top_.get_box()[i] << " ";
-      }
-      std::cout << std::endl;
       while (frame_->read_next_frame(trj_, no_pbc_, top_.get_pbc_type(), top_.get_pbc(), force_box_) == exdrOK)
       {
         new_progress = static_cast<float>(frnr) / static_cast<float>(frame_->nframe);
